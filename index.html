@@ -401,7 +401,15 @@ function recActive(r,mk){
   if(r.months && r.months.length && !r.months.includes(Number(mk.slice(5)))) return false;
   return true;
 }
-function recAmount(r,mk){ return (r.end===mk && r.lastAmt!=null) ? r.lastAmt : r.amt; }
+// salaire fixe avant impôt attendu : moyenne des 3 derniers bulletins ordinaires (on écarte les mois exceptionnels, ex. congés payés)
+function fixeAuto(){
+  const P=S().payslips||{}, ks=Object.keys(P).sort().slice(-6); const v=ks.map(k=>({k,s:paieParts(P[k]).sal})).filter(x=>x.s>0);
+  if(v.length<2) return null; const med=v.map(x=>x.s).sort((a,b)=>a-b)[Math.floor(v.length/2)];
+  const ok=v.filter(x=>x.s<=med*1.1&&x.s>=med*0.8).slice(-3); if(!ok.length) return null;
+  return Math.round(ok.reduce((a,x)=>a+x.s,0)/ok.length);
+}
+function netFixeNow(){ const m=Number(S().prefs.netFixeManual||0); if(m>0) return m; const a=fixeAuto(); return a!=null?a:Number(S().prefs.netFixe||0); }
+function recAmount(r,mk){ if(r.id==="salairefixesyn30"){ const n=netFixeNow(); if(n>0) return n; } return (r.end===mk && r.lastAmt!=null) ? r.lastAmt : r.amt; }
 function recStatus(mk,budget){
   const used=new Set(); const out=[];
   const ops=budget?budgetOps(mk):opsOf(mk);
@@ -456,7 +464,7 @@ function plafKeyOf(cat,sub){ const g=groupOf(cat,sub||""); if(g!=="ess"&&g!=="no
 function plafVal(raw,mk){
   if(raw==null) return null; if(typeof raw==="number") return raw;
   if(raw.auto) return alimAuto(mk).plafond;
-  if(raw.autoTax){ const ps=(S().payslips||{})[addM(mk,-1)]; if(ps) return r2(ps.pas); return Math.round(Number(S().prefs.pasRate||0.095)*(Number(S().prefs.netFixe||0)+commsOf(addM(mk,-1),false))); }
+  if(raw.autoTax){ const ps=(S().payslips||{})[addM(mk,-1)]; if(ps) return r2(ps.pas); return Math.round(Number(S().prefs.pasRate||0.095)*(netFixeNow()+commsOf(addM(mk,-1),false))); }
   if(raw.m&&raw.m[mk]!=null) return Number(raw.m[mk]);
   if(raw.end&&mk>raw.end) return 0; if(raw.start&&mk<raw.start) return 0;
   if(raw.months&&!raw.months.includes(Number(mk.slice(5)))) return 0;
@@ -500,7 +508,7 @@ function commsOf(mk,withProbable){ return (S().commissions||[]).filter(c=>c.paie
 // ---- projection : solde juste après chaque paie
 function paieRecue(mk){ return opsOf(mk).some(o=>o.cat==="rev"&&o.sub==="Salaire"&&Number(o.d.slice(8))>=25); }
 function projection(n,withProbable){
-  const m0=nowMk(), cc=S().accounts.find(a=>a.id==="cc"), bal=cc?accBalance(cc)||0:0, netFixe=Number(S().prefs.netFixe||0);
+  const m0=nowMk(), cc=S().accounts.find(a=>a.id==="cc"), bal=cc?accBalance(cc)||0:0, netFixe=netFixeNow();
   const G0=planGroups(m0); let rest=0;
   for(const g of ["ess","non"]) for(const x of G0[g].list) rest+=Math.max(0,(x.plaf||0)-x.spent,x.fixTodo);
   rest+=G0.det.todo+Math.max(0,G0.epa.plaf-G0.epa.spent);
@@ -975,7 +983,7 @@ function applyPaie(rec,quiet){
   setMonthOps(mkd,[...opsOf(mkd),...add]);
   if(P.frais) for(const m of allMonths()){ let c=false; for(const x of opsOf(m)) if(x.pro&&x.pro.status==="attente"&&x.pro.paie<=M){ x.pro.status="recu"; c=true; } if(c) Store.saveMonth(m); }
   for(const c of (S().commissions||[])) if(c.paie===M) c.recu=true;
-  const last=Object.keys(S().payslips).sort().pop(); if(last===M){ S().prefs.pasRate=P.N?r2(P.pas/P.N*10000)/10000:S().prefs.pasRate; if(!rec.prime&&rec.comm<rec.base) S().prefs.netFixe=r2(P.sal); }
+  const last=Object.keys(S().payslips).sort().pop(); if(last===M){ S().prefs.pasRate=P.N?r2(P.pas/P.N*10000)/10000:S().prefs.pasRate; }
   saveSettings(); if(!quiet) toast("Bulletin de "+lab+" : salaire "+eur(P.sal)+", commissions "+eur(P.comm+P.prime)+", impôt "+eur(P.pas));
   return true;
 }
@@ -1147,7 +1155,7 @@ function vBudget(){
   return h;
 }
 function vBudgetMonth(mk){
-  const plan=fixedPlan(mk,true), netFixe=Number(S().prefs.netFixe||0);
+  const plan=fixedPlan(mk,true), netFixe=netFixeNow();
   const salOps=budgetOps(mk).filter(o=>o.cat==="rev"&&/Salaire|Acompte|Primes/.test(o.sub||""));
   const salaire=salOps.length?salOps.reduce((a,o)=>a+o.amt,0):netFixe+commsOf(addM(mk,-1),false);
   const G=planGroups(mk), tg=Object.assign({ess:50,non:30,det:20,epa:0},S().prefs.targets||{});
@@ -1319,7 +1327,7 @@ function vPlanning(mk){
 function vPrevision(){
   const C=(S().commissions||[]).slice().sort((a,b)=>a.paie.localeCompare(b.paie)); const p=S().prefs;
   const P1=projection(9,false), P2=projection(9,true), lim=-Number(p.decouvert||0), cible=Number(p.matelas||0);
-  let h=`<section class="card"><div class="ch"><h2>Mon compte juste après chaque paie</h2><span class="s">plafonds respectés · net fixe ${eur0(p.netFixe||0)}</span></div>
+  let h=`<section class="card"><div class="ch"><h2>Mon compte juste après chaque paie</h2><span class="s">plafonds respectés · salaire fixe avant impôt ${eur0(netFixeNow())}</span></div>
    <div class="row" style="font-size:12px;color:var(--muted);border:0;padding:2px 0"><div class="t">Paie de</div><span style="width:90px;text-align:right">Prudent</span><span style="width:90px;text-align:right">Probable</span></div>
    ${P1.map((r,i)=>`<div class="row" style="padding:6px 0"><div class="t"><b style="font-weight:500">${esc(mLabel(r.mk))}</b><small>sorties ${eur0(r.out)} · rentrées ${eur0(r.inc)}</small></div><span class="num" style="width:90px;text-align:right;color:${r.B<lim?"var(--coral)":r.B<0?"var(--amber)":"var(--mint)"}">${sgn(r.B,eur0)}</span><span class="num" style="width:90px;text-align:right;color:${P2[i].B<lim?"var(--coral)":P2[i].B<0?"var(--amber)":"var(--mint)"}">${sgn(P2[i].B,eur0)}</span></div>`).join("")}
    <p class="muted" style="font-size:12px;margin:8px 0 0">Objectif matelas : ${eur0(cible)} après la paie, pour ne plus passer sous zéro dans le mois. Autorisation de découvert : ${eur0(-lim)}. Prudent = commissions sûres ; probable = sûres + probables.</p></section>`;
@@ -1355,6 +1363,20 @@ function vRepartition(amt){
     ["5. Ensuite","épargne vacances, reprise Spirica et Suravenir"]];
   return `<section class="card"><div class="ch"><h2>Où va chaque commission en plus ?</h2><span class="s">l'ordre décidé ensemble</span></div>${steps.map(s=>`<div class="row"><div class="t"><b>${esc(s[0])}</b><small style="white-space:normal">${esc(s[1])}</small></div></div>`).join("")}</section>`;
 }
+function recRow(r,sub){ const key="rec|"+r.id; const per=r.once?"le "+r.day+" "+mLabel(r.once).toLowerCase():r.months&&r.months.length?"mois scolaires · le "+r.day:"chaque mois · le "+r.day; const fin=r.end?" · jusqu'en "+mLabel(r.end).toLowerCase():"";
+     return `<div class="row"${sub?' style="padding-left:14px"':''}><span class="bar4" style="background:${catColor(r.cat)}"></span><div class="t"><b>${esc(r.label)}${r.end&&r.end<nowMk()?'<span class="tag">terminé</span>':""}</b><small>${esc(catName(r.cat))} · ${esc(r.sub||"")} · ${esc(per+fin)}</small></div><span class="a ${r.amt>0?"pos":""}">${sgn(r.id==="salairefixesyn30"?recAmount(r,nowMk()):r.amt)}</span>
+     ${state.confirm===key?`<button class="confirm" data-act="del-rec" data-id="${r.id}">Supprimer ?</button>`:`<button class="ibtn" data-act="edit-rec" data-id="${r.id}" aria-label="Modifier">${ICON.edit}</button><button class="ibtn" data-act="ask" data-key="${key}" aria-label="Supprimer">${ICON.del}</button>`}</div>`; }
+function recGroups(recs){ // regroupe les lignes d'un même organisme (« Etalis – … », « Passeport – … ») quand il y en a 2 ou plus
+  const by={}; for(const r of recs){ const p=(r.label.split(" – ")[1]!==undefined)?r.label.split(" – ")[0]:null; if(p){ (by[p]=by[p]||[]).push(r); } }
+  const out=[], done=new Set();
+  for(const r of recs){ const p=(r.label.split(" – ")[1]!==undefined)?r.label.split(" – ")[0]:null;
+    if(p&&by[p].length>=2){ if(done.has(p)) continue; done.add(p); out.push({group:p,list:by[p]}); } else out.push({r}); }
+  return out;
+}
+function recGroupRow(g){
+  const tot=g.list.filter(r=>recActive(r,nowMk())).reduce((a,r)=>a+r.amt,0), open=!!(state.recGrp||{})[g.group];
+  return `<div class="row" data-act="rec-grp" data-g="${esc(g.group)}" style="cursor:pointer" role="button" aria-expanded="${open}"><span class="bar4" style="background:${catColor(g.list[0].cat)}"></span><div class="t" style="white-space:normal"><b style="white-space:normal">${esc(g.group)}</b><small style="white-space:normal;overflow:visible;text-overflow:clip">${g.list.length} lignes · ${esc(catName(g.list[0].cat))} · touche pour ${open?"replier":"voir le détail"}</small></div><span class="a">${sgn(tot)}</span><span style="width:30px;text-align:center;color:var(--muted)">${open?"▾":"▸"}</span></div>${open?g.list.map(r=>recRow(r,true)).join(""):""}`;
+}
 function vRecurring(mk){
   const recs=(S().recurring||[]).slice().sort((a,b)=>(kindOf(a.cat)==="rev"?-1:0)-(kindOf(b.cat)==="rev"?-1:0)||a.cat.localeCompare(b.cat)||a.day-b.day);
   const ed=state.editRec?recs.find(r=>r.id===state.editRec):null;
@@ -1371,9 +1393,7 @@ function vRecurring(mk){
    <div class="fld"><label for="r-once">Fréquence</label><select class="in" id="r-once"><option value="">Chaque mois</option><option value="once" ${ed&&ed.once?"selected":""}>Une seule fois</option></select></div>
    <button class="btn pri" type="submit">${ed?"Enregistrer":"Ajouter"}</button></form></section>`;
   h+=`<section class="card"><div class="ch"><h2>Opérations récurrentes</h2><span class="s">solde mensuel actuel : <b class="num ${monthly<0?"neg":"pos"}">${sgn(monthly)}</b></span></div>
-   ${recs.map(r=>{ const key="rec|"+r.id; const per=r.once?"le "+r.day+" "+mLabel(r.once).toLowerCase():r.months&&r.months.length?"mois scolaires · le "+r.day:"chaque mois · le "+r.day; const fin=r.end?" · jusqu'en "+mLabel(r.end).toLowerCase():"";
-     return `<div class="row"><span class="bar4" style="background:${catColor(r.cat)}"></span><div class="t"><b>${esc(r.label)}${r.end&&r.end<nowMk()?'<span class="tag">terminé</span>':""}</b><small>${esc(catName(r.cat))} · ${esc(r.sub||"")} · ${esc(per+fin)}</small></div><span class="a ${r.amt>0?"pos":""}">${sgn(r.amt)}</span>
-     ${state.confirm===key?`<button class="confirm" data-act="del-rec" data-id="${r.id}">Supprimer ?</button>`:`<button class="ibtn" data-act="edit-rec" data-id="${r.id}" aria-label="Modifier">${ICON.edit}</button><button class="ibtn" data-act="ask" data-key="${key}" aria-label="Supprimer">${ICON.del}</button>`}</div>`; }).join("")}
+   ${recGroups(recs).map(x=>x.group?recGroupRow(x):recRow(x.r)).join("")}
   </section>`;
   return h;
 }
@@ -1605,7 +1625,7 @@ function vGroups(mk,start){
    ${hasFut?`<div class="row" title="${esc(tipAll)}"><div class="t"><b>${R-usedT>=0?"Reste à terme":"Dépassement à terme"}</b><small>après les prélèvements à venir</small></div><span class="a ${R-usedT<0?"neg":"pos"}">${sgn(R-usedT)}</span></div>`:""}</section>`;
   const hRep=h; h="";
   const ms0=[]; for(let m=start;m<=mk;m=addM(m,1)) ms0.push(m);
-  const ms=ms0.filter(m=>groupTotals(m).rev>=Number(S().prefs.netFixe||0)*0.5); // on écarte les mois sans salaire complet (ex. janvier : salaire de décembre absent)
+  const ms=ms0.filter(m=>groupTotals(m).rev>=netFixeNow()*0.5); // on écarte les mois sans salaire complet (ex. janvier : salaire de décembre absent)
   if(ms.length>1){ const data=ms.map(m=>groupTotals(m));
     const ser=["ess","non","det","epa"].map(k=>({color:GCOL[k],v:data.map(d=>d.rev>0?Math.max(0,(k==="epa"?Math.max(0,d.epa):d[k]))/d.rev*100:0)}));
     h+=`<section class="card"><div class="ch"><h2>Évolution de la répartition</h2><div class="legend">${["ess","non","det","epa"].map(k=>`<span><i style="background:${GCOL[k]}"></i>${GROUPS[k]}</span>`).join("")}</div></div>${multiLine(ser,ms)}<p class="muted" style="font-size:12px;margin:6px 0 0">En % des revenus de chaque mois (de salaire à salaire). L'objectif : voir la part Dettes baisser et la part Épargne monter.</p></section>`; }
@@ -1749,7 +1769,7 @@ function vSettings(){
   const p=S().prefs;
   let h=banner();
   h+=`<section class="card"><div class="ch"><h2>Repères</h2></div><form class="form" id="prefForm">
-   <div class="fld"><label for="p-net">Net fixe mensuel (€)</label><input class="in num" id="p-net" inputmode="decimal" value="${String(p.netFixe||"").replace(".",",")}"></div>
+   <div class="fld"><label for="p-net">Salaire fixe avant impôt (€) : laisse vide pour le calcul automatique</label><input class="in num" id="p-net" inputmode="decimal" value="${p.netFixeManual?String(p.netFixeManual).replace(".",","):""}" placeholder="${fixeAuto()!=null?"automatique : "+fixeAuto():""}"></div>
    <div class="fld"><label for="p-dec">Autorisation de découvert (€)</label><input class="in num" id="p-dec" inputmode="decimal" value="${p.decouvert||0}"></div>
    <div class="fld"><label for="p-mat">Matelas visé après la paie (€)</label><input class="in num" id="p-mat" inputmode="decimal" value="${p.matelas||0}"></div>
    <div class="fld"><label for="p-por">Prix par portion (€)</label><input class="in num" id="p-por" inputmode="decimal" value="${String(p.portion||5.5).replace(".",",")}"></div>
@@ -1911,7 +1931,8 @@ document.addEventListener("click",e=>{
       const d=mk+"-"+pad(Math.min(r.day||1,lastDay(mk)));
       setMonthOps(mk,[...opsOf(mk),{id:uid(),d,amt:recAmount(r,mk),label:r.label,cat:r.cat,sub:r.sub,acc:r.acc||"cc",fixed:kindOf(r.cat)==="dep",recId:r.id,note:"",card:!!r.card}]); state.avJust[r.id]=true; render(); toast(r.card?"Enregistré sur la carte":"Pointé : débité"); break; }
     case "edit-rec": state.editRec=t.dataset.id; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
-    case "cancel-rec": state.editRec=null; render(); break;
+    case "cancel-rec": state.editRec=null; state.recNew=false; render(); break;
+    case "rec-grp": { const g=t.dataset.g; state.recGrp=Object.assign({},state.recGrp,{[g]:!(state.recGrp||{})[g]}); render(); break; }
     case "del-rec": S().recurring=S().recurring.filter(r=>r.id!==t.dataset.id); saveSettings(); state.confirm=null; render(); toast("Récurrence supprimée"); break;
     case "edit-acc": state.editAcc=t.dataset.id; render(); break;
     case "edit-acc-pat": state.patSeg="comptes"; state.editAcc=t.dataset.id; render(); break;
@@ -2032,7 +2053,7 @@ document.addEventListener("submit",e=>{
     const r={id:state.editRec||uid(),label:$("#r-label").value.trim(),amt,cat:$("#r-cat").value,sub:$("#r-sub").value,day:Number($("#r-day").value)||1,
       start:once?null:($("#r-start").value||null),end:once?null:($("#r-end").value||null),once:once?($("#r-start").value||nowMk()):null,acc:"cc"};
     const old=state.editRec?S().recurring.find(x=>x.id===state.editRec):null; if(old){ if(old.months) r.months=old.months; if(old.lastAmt!=null) r.lastAmt=old.lastAmt; }
-    S().recurring=[...S().recurring.filter(x=>x.id!==r.id),r]; saveSettings(); state.editRec=null; render(); toast("Récurrence enregistrée");
+    S().recurring=[...S().recurring.filter(x=>x.id!==r.id),r]; saveSettings(); state.editRec=null; state.recNew=false; render(); toast("Récurrence enregistrée");
   }
   if(f.id==="accForm"){ const a=S().accounts.find(x=>x.id===f.dataset.id); a.name=$("#a-name").value.trim()||a.name; a.bank=$("#a-bank").value.trim(); const b=$("#a-bal").value.trim(); a.balance=b===""?null:parseAmt(b); a.balanceDate=$("#a-date").value||todayISO(); saveSettings(); state.editAcc=null; render(); toast("Compte mis à jour"); }
   if(f.id==="crForm"){ const c=S().credits.find(x=>x.id===f.dataset.id); const today=todayISO(); const old=crdAt(c,today);
@@ -2082,7 +2103,7 @@ document.addEventListener("submit",e=>{
   if(f.id==="envForm"){ const n=$("#ev-name").value.trim(), tg=parseAmt($("#ev-target").value); if(!n||!(tg>0)){ toast("Nom et objectif"); return; } const ex=state.editEnv?(S().envelopes||[]).find(x=>x.id===state.editEnv):null; if(ex){ ex.name=n; ex.target=tg; ex.due=$("#ev-due").value||ex.due; ex.monthly=parseAmt($("#ev-m").value)||0; state.editEnv=null; } else (S().envelopes=S().envelopes||[]).push({id:uid(),name:n,target:tg,due:$("#ev-due").value||addM(nowMk(),6),monthly:parseAmt($("#ev-m").value)||0,saved:0}); saveSettings(); render(); toast(ex?"Enveloppe modifiée":"Enveloppe créée"); return; }
   if(f.id==="promForm"){ const w=$("#pm-who").value.trim(), q=$("#pm-what").value.trim(); if(!w||!q){ toast("Pour qui et quoi"); return; } const px=state.editProm?(S().promises||[]).find(x=>x.id===state.editProm):null; if(px){ px.who=w; px.what=q; px.amt=parseAmt($("#pm-amt").value)||0; state.editProm=null; } else (S().promises=S().promises||[]).push({id:uid(),who:w,what:q,amt:parseAmt($("#pm-amt").value)||0,status:"promis"}); saveSettings(); render(); toast(px?"Cadeau modifié":"Cadeau promis ajouté"); return; }
   if(f.id==="commForm"){ const v=parseAmt($("#cm-brut").value); const pm=$("#cm-paie").value; if(!(v>0)||!pm){ toast("Indique le montant et la paie"); return; } const lab=$("#cm-label").value.trim()||"Commission", sure=$("#cm-sure").value==="1"; const ex=state.editComm?(S().commissions||[]).find(x=>x.id===state.editComm):null; if(ex){ ex.label=lab; ex.brut=v; delete ex.net; ex.paie=pm; ex.sure=sure; state.editComm=null; } else (S().commissions=S().commissions||[]).push({id:uid(),label:lab,brut:v,paie:pm,sure,recu:false}); saveSettings(); render(); toast(ex?"Commission modifiée":"Commission ajoutée"); return; }
-  if(f.id==="prefForm"){ const P=S().prefs; P.netFixe=parseAmt($("#p-net").value)||0; P.decouvert=parseAmt($("#p-dec").value)||0; P.matelas=parseAmt($("#p-mat").value)||0; P.portion=parseAmt($("#p-por").value)||5.5; P.titres=parseAmt($("#p-tr").value)||0; P.commRatio=(parseAmt($("#p-cr").value)||70)/100; S().prefs.targets={ess:parseAmt($("#p-t-ess").value)||0,non:parseAmt($("#p-t-non").value)||0,det:parseAmt($("#p-t-det").value)||0,epa:parseAmt($("#p-t-epa").value)||0}; saveSettings(); render(); toast("Repères enregistrés"); }
+  if(f.id==="prefForm"){ const P=S().prefs; P.netFixeManual=parseAmt($("#p-net").value)||0; P.decouvert=parseAmt($("#p-dec").value)||0; P.matelas=parseAmt($("#p-mat").value)||0; P.portion=parseAmt($("#p-por").value)||5.5; P.titres=parseAmt($("#p-tr").value)||0; P.commRatio=(parseAmt($("#p-cr").value)||70)/100; S().prefs.targets={ess:parseAmt($("#p-t-ess").value)||0,non:parseAmt($("#p-t-non").value)||0,det:parseAmt($("#p-t-det").value)||0,epa:parseAmt($("#p-t-epa").value)||0}; saveSettings(); render(); toast("Repères enregistrés"); }
 });
 
 /* =====================================================================
@@ -2289,6 +2310,7 @@ function migrate(){
       if(/^Salaire net avant impôt \(/.test(o.label)){ o.label="Salaire fixe net avant impôt, hors commissions ("+m[1]+")"; ch=true; }
       else if(/^Commissions \(/.test(o.label)){ o.label="Commissions, net avant impôt ("+m[1]+")"; ch=true; } }
     if(ch) Store.saveMonth(mk); } s.prefs.v10=true; Store.saveSettings(); }
+  if(!s.prefs.v13){ for(const r of (s.recurring||[])) if(r.id==="salairefixesyn30") r.label="Salaire fixe Synovo (avant impôt, calculé)"; s.prefs.v13=true; Store.saveSettings(); }
   if(!s.prefs.v12){ s.commissions=[]; s.prefs.v12=true; Store.saveSettings(); }
   if(!s.prefs.v11){ const c=s.cats.find(x=>x.id==="ali"); if(c&&!c.subs.includes("Coiffeur")) c.subs.push("Coiffeur"); s.prefs.fondsCible=12000; s.prefs.fondsAccounts=["ldd"]; s.prefs.v11=true; Store.saveSettings(); }
   { const t=s.prefs.targets; if(t&&t.ess===70&&t.non===10&&t.det===20&&!t.epa){ s.prefs.targets={ess:50,non:30,det:20,epa:0}; Store.saveSettings(); } }
