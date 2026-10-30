@@ -414,8 +414,10 @@ function recStatus(mk,budget){
     const rx=r.match?new RegExp(r.match,"i"):null;
     const m=ops.find(o=>!used.has(o.id) && (o.recId===r.id || (rx && rx.test(o.label) && Math.sign(o.amt)===Math.sign(amt)))) ||
             ops.find(o=>!used.has(o.id) && !o.recId && (!rx||rx.test(o.label)) && o.cat===r.cat && (o.sub||"")===(r.sub||"") && Math.abs(o.amt-amt)<=tol);
-    if(m) used.add(m.id);
-    out.push({r,amt,paid:!!m,op:m,date:rm+"-"+pad(Math.min(r.day||1,lastDay(rm)))});
+    // paie : si le salaire du mois est arrivé (paye saisie ou bulletin déposé), la rentrée prévue est réglée, quel que soit le montant
+    const mm=m||((kindOf(r.cat)==="rev"&&r.sub==="Salaire"&&(r.day||1)>=25)?ops.find(o=>!used.has(o.id)&&o.amt>0&&o.cat==="rev"&&o.sub==="Salaire"&&(o.paieOf||o.todoPaie||Number(o.d.slice(8))>=25)):null);
+    if(mm) used.add(mm.id);
+    out.push({r,amt,paid:!!mm,op:mm,date:rm+"-"+pad(Math.min(r.day||1,lastDay(rm)))});
   }
   return out.sort((a,b)=>a.date.localeCompare(b.date));
 }
