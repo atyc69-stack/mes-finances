@@ -520,9 +520,9 @@ function projection(n,withProbable){
   rest+=G0.det.todo+Math.max(0,G0.epa.plaf-G0.epa.spent);
   // les achats carte du mois sont déjà dans "spent" mais pas encore débités : on les retire du solde
   let cardPending=0; if(!cardSettled(m0)) cardPending=-cardCycle(m0).val;
-  let B=bal-cardPending-rest+(paieRecue(m0)?0:netFixe+commsOf(m0,withProbable));
-  const rows=[{mk:m0,B,inc:paieRecue(m0)?0:netFixe+commsOf(m0,withProbable),out:G0.total}];
-  for(let i=1;i<=n;i++){ const mk=addM(m0,i), G=planGroups(mk), inc=netFixe+commsOf(mk,withProbable); B=B-G.total+inc; rows.push({mk,B,inc,out:G.total}); }
+  const nd0=paieRecue(m0)?0:ndfDue(m0,true); let B=bal-cardPending-rest+(paieRecue(m0)?0:netFixe+commsOf(m0,withProbable)+nd0);
+  const rows=[{mk:m0,B,inc:paieRecue(m0)?0:netFixe+commsOf(m0,withProbable)+nd0,out:G0.total}];
+  for(let i=1;i<=n;i++){ const mk=addM(m0,i), G=planGroups(mk), inc=netFixe+commsOf(mk,withProbable)+ndfDue(mk,i===1&&paieRecue(m0)); B=B-G.total+inc; rows.push({mk,B,inc,out:G.total}); }
   return rows;
 }
 // ---- point bas du mois : prélèvements hors carte avant la paie
@@ -586,6 +586,8 @@ function donut(segs,big,small){
    ===================================================================== */
 function cardMk(o){ return isCardLate(o)?addM(mkOf(o.d),1):mkOf(o.d); }
 function cardState(o){ if(!(o.card&&o.amt<0)) return null; const cm=cardMk(o); if(cardSettled(cm)||o.debited) return "ok"; return (o.imported||o.bank)?"bank":"saisie"; }
+function ndfDue(mk,upTo){ let v=0; for(const m of allMonths()) for(const o of opsOf(m)) if(o.pro&&o.pro.status==="attente"){ const p=o.pro.paie||paieFor(o.d); if(upTo?p<=mk:p===mk) v+=Number(o.pro.remb||-o.amt); } return r2(v); }
+function recvOther(){ return r2(recvItems().filter(x=>x.act!=="ndf-recu").reduce((a,x)=>a+x.amt,0)); }
 function recvItems(){ const out=[];
   for(const m of allMonths()) for(const o of opsOf(m)){
     if(o.pro&&o.pro.status==="attente") out.push({o,m,amt:Number(o.pro.remb||-o.amt),sub:"note de frais, paie "+deM(o.pro.paie,true),act:"ndf-recu"});
@@ -690,8 +692,9 @@ function vHome(){
   let h=banner();
   // 1. compte
   h+=`<section class="card"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end">
-     <div><div class="muted" style="font-size:12.5px">Compte courant · au ${esc(dFr(cc.balanceDate).slice(0,5))}</div><div class="num" style="font-size:clamp(19px,5.6vw,26px);white-space:nowrap">${bal==null?"—":sgn(bal)}</div></div>
+     <div><div class="muted" style="font-size:12.5px">Solde aujourd'hui</div><div class="num" style="font-size:clamp(19px,5.6vw,26px);white-space:nowrap">${bal==null?"—":sgn(bal)}</div></div>
      <div style="text-align:right"><div class="muted" style="font-size:12.5px">Prévisionnel fin de mois</div><div class="num" style="font-size:clamp(19px,5.6vw,26px);white-space:nowrap">${sgn(prevision)}</div></div></div>
+  ${(()=>{ const pm=m0; let l=""; if(!paieRecue(pm)&&sal){ const aft=prevision+netFixeNow()+commsOf(pm,false)+ndfDue(pm,true); l+=`<div class="muted" style="font-size:12px;margin-top:8px">Solde le jour de ma paie (le ${Number(sal.date.slice(8))} ${esc(mn(pm))}) : <b class="num" style="color:var(--ink);font-weight:500">${sgn(aft)}</b></div>`; } const w=recvOther(); if(w>0) l+=`<div class="muted" style="font-size:12px;margin-top:2px">${eur0(w)} en attente de remboursement</div>`; return l; })()}
 </section>`;
   // 2. victoire
   const v=victory();
