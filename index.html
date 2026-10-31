@@ -586,6 +586,15 @@ function donut(segs,big,small){
    ===================================================================== */
 function cardMk(o){ return isCardLate(o)?addM(mkOf(o.d),1):mkOf(o.d); }
 function cardState(o){ if(!(o.card&&o.amt<0)) return null; const cm=cardMk(o); if(cardSettled(cm)||o.debited) return "ok"; return (o.imported||o.bank)?"bank":"saisie"; }
+function recvItems(){ const out=[];
+  for(const m of allMonths()) for(const o of opsOf(m)){
+    if(o.pro&&o.pro.status==="attente") out.push({o,m,amt:Number(o.pro.remb||-o.amt),sub:"note de frais, paie "+deM(o.pro.paie,true),act:"ndf-recu"});
+    else if(o.av&&o.av.status==="attente") out.push({o,m,amt:Number(o.av.remb),sub:"avance"+(o.av.partial?", remboursement partiel":""),act:"av-recu"});
+    else if(o.health==="avance") out.push({o,m,amt:-o.amt,sub:"remboursée par la sécu et la mutuelle",act:"health-ok"}); }
+  return out.sort((a,b)=>a.o.d.localeCompare(b.o.d)); }
+function recvRows(L){ return L.map(x=>`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(x.o.label)}</b><small style="white-space:normal">${esc(dFr(x.o.d).slice(0,5))} · ${esc(x.sub)}</small></div><span class="a pos">${eur(x.amt)}</span><button class="btn sm pri" data-act="${x.act}" data-mk="${x.m}" data-id="${x.o.id}">Reçu</button></div>`).join(""); }
+function vRecevoir(){ const L=recvItems(), tot=L.reduce((a,x)=>a+x.amt,0);
+  return `<section class="card"><div class="ch"><h2>À recevoir</h2><span class="s">${L.length?eur(tot):""}</span></div>${L.length?recvRows(L)+`<p class="muted" style="font-size:12px;margin:8px 0 0">Touche « Reçu » quand l'argent est arrivé. Pour une avance, l'entrée d'argent est créée toute seule sur ton compte.</p>`:`<p class="muted" style="margin:6px 0">Rien à recevoir pour le moment.</p>`}</section>`; }
 function ptLists(){
   const m0=nowMk(), L={vu:[],deb:[],debRec:[],creRec:[],recv:[]};
   for(const md of [m0,addM(m0,1)]) if(!cardSettled(md)) for(const o of cycleOps(md)){ if(L.vu.some(x=>x.id===o.id)||L.deb.some(x=>x.id===o.id)) continue; const st=cardState(o); if(st==="saisie") L.vu.push(o); else if(st==="bank") L.deb.push(o); }
@@ -720,6 +729,8 @@ function vHome(){
     if(parts.length){ const bl=fondsTotal(), pc=Math.max(0,Math.min(100,bl/cible*100));
       h+=`<section class="card click" data-goto="patri"><div class="ch"><h2>Fonds d'urgence</h2><span class="s">›</span></div><div style="display:flex;gap:14px;align-items:center"><div class="ring" style="background:conic-gradient(var(--mint) 0 ${pc}%,#1A2440 ${pc}% 100%)"><span>${pcFr(pc)}</span></div>
       <div><div style="font-size:14.5px"><b class="num">${eur0(bl)}</b> sur ${eur0(cible)}</div><div class="muted" style="font-size:12.5px;white-space:normal">${esc(parts.map(x=>x.a.name+(x.pct<100?" "+x.pct+" %":"")).join(" + "))}</div></div></div></section>`; } }
+  { const R=recvItems(); if(R.length){ const tot=R.reduce((a,x)=>a+x.amt,0);
+      h+=`<section class="card" style="border-color:rgba(251,191,36,.45)"><div class="ch"><h2>À recevoir</h2><span class="s" style="color:var(--amber);font-size:15px"><b class="num">${eur(tot)}</b></span></div>${recvRows(R)}</section>`; } }
   // 7. à pointer (discret)
   { const n=pointCount(); if(n) h+=`<p style="text-align:center;margin:6px 0 0"><a href="#" data-act="to-pointer" style="color:var(--muted);font-size:12.5px;text-decoration:none">${n} à pointer ›</a></p>`; }
   return h;
@@ -940,7 +951,8 @@ function vPayeForm(){
 function vOps(){
   const L=ptLists(); let t=state.editId?"saisir":(state.opsTab||"saisir"); if(t==="pointer") t="deb";
   const mk=state.month;
-  let h=`<div class="optabs" role="tablist">${[["saisir","Saisir",""],["vu","Vu à la banque ?",L.nVu],["deb","Débité sur mon compte",L.nDeb],["mois","Opérations du mois",""]].map(([k,l,n])=>`<button data-optab="${k}" class="${t===k?"on":""}" role="tab" aria-selected="${t===k}">${l}${n!==""?` <span class="cnt">${n}</span>`:""}</button>`).join("")}</div>`;
+  let h=`<div class="optabs" role="tablist">${[["saisir","Saisir",""],["recevoir","À recevoir",recvItems().length],["vu","Vu à la banque ?",L.nVu],["deb","Débité sur mon compte",L.nDeb],["mois","Opérations du mois",""]].map(([k,l,n])=>`<button data-optab="${k}" class="${t===k?"on":""}" role="tab" aria-selected="${t===k}">${l}${n!==""?` <span class="cnt">${n}</span>`:""}</button>`).join("")}</div>`;
+  if(t==="recevoir") return banner()+h+vRecevoir();
   if(t==="deb") return banner()+h+vPointer(nowMk());
   if(t==="vu") return banner()+h+vPtList("vu",true);
   if(t==="mois"){ const ops=opsOf(mk).filter(o=>cardState(o)), cnt={saisie:0,bank:0,ok:0}; ops.forEach(o=>cnt[cardState(o)]++); const F=state.stF||"";
