@@ -444,7 +444,7 @@ function cardCycle(mk){ // achats carte débités à la fin du mois mk (du 20 du
 function cardSettled(mk){ return opsOf(mk).some(o=>o.sub==="Règlement carte"&&Number(o.d.slice(8))>=24); }
 const GROUPS={ess:"Essentiel",non:"Non essentiel",det:"Dettes",epa:"Épargne & investissement"};
 const GCOL={ess:"#7CA8FF",non:"#FFB86B",det:"#FF7A6B",epa:"#5EEAD4"};
-const DEF_ESS=["imp/*","log/*","ali/Supermarché","ali/Hygiène & entretien","ali/Coiffeur","ste/Scolarité","ath/Scolarité","ass/*","abo/Téléphone","san/*","ban/*","div/Imprévus"];
+const DEF_ESS=["imp/*","log/*","sup/*","coi/*","ali/Supermarché","ali/Hygiène & entretien","ali/Coiffeur","ste/Scolarité","ath/Scolarité","ass/*","abo/Téléphone","san/*","ban/*","div/Imprévus"];
 function groupOf(cat,sub){
   const k=kindOf(cat); if(k==="cre") return "det"; if(k==="epa") return "epa"; if(k!=="dep") return null;
   const gm=S().groupMap||{}; if(gm[cat+"/"+sub]) return gm[cat+"/"+sub];
@@ -461,7 +461,7 @@ function groupTotals(mk){
 }
 // Plafonds par groupe : clé "ess:ali" = la partie Essentiel de la catégorie Alimentation (charges fixes comprises)
 // ---- plafonds : clé "ess:ali" (catégorie dans un groupe) ou "ess:ali/Supermarché" (sous-catégorie)
-function plafKeyOf(cat,sub){ const g=groupOf(cat,sub||""); if(g!=="ess"&&g!=="non") return null; const P=S().plafonds||{}; const k2=g+":"+cat+"/"+(sub||""); return (k2 in P)?k2:g+":"+cat; }
+function plafKeyOf(cat,sub){ const lk=(S().plafLink||{})[cat+"/"+(sub||"")]; if(lk){ const i=lk.indexOf("/"); cat=lk.slice(0,i); sub=lk.slice(i+1); } const g=groupOf(cat,sub||""); if(g!=="ess"&&g!=="non") return null; const P=S().plafonds||{}; const k2=g+":"+cat+"/"+(sub||""); return (k2 in P)?k2:g+":"+cat; }
 function plafVal(raw,mk){
   if(raw==null) return null; if(typeof raw==="number") return raw;
   if(raw.auto) return alimAuto(mk).plafond;
@@ -471,7 +471,7 @@ function plafVal(raw,mk){
   if(raw.months&&!raw.months.includes(Number(mk.slice(5)))) return 0;
   return Number(raw.v||0);
 }
-function keyLabel(k){ const [g,rest]=k.split(":"); const [c,sb]=rest.split("/"); if(sb) return sb==="Supermarché"?"Courses alimentaires":sb;
+function keyLabel(k){ const [g,rest]=k.split(":"); const [c,sb]=rest.split("/"); if(sb) return (sb==="Supermarché"||(c==="sup"&&sb==="Alimentation"))?"Courses alimentaires":sb;
   const cat=catById(c); if(!cat) return c; const mine=cat.subs.filter(x=>groupOf(c,x)===g&&!((S().plafonds||{})[g+":"+c+"/"+x]!=null)); if(mine.length&&mine.length<cat.subs.length) return cat.name+" · "+mine.join(", "); return cat.name; }
 // ---- planning de Stella → repas à la maison → plafond alimentation
 const STELLA_MEALS={mfr:[0,0,0,0,1,2,2],stage:[1,1,1,1,1,2,2],moi:[2,2,2,2,2,2,2],mere:[0,0,0,0,0,0,0]};
@@ -767,7 +767,7 @@ function vAlerts(){
 /* ---------- SAISIE VOCALE ---------- */
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
 const MOIS=["janvier","fevrier","mars","avril","mai","juin","juillet","aout","septembre","octobre","novembre","decembre"];
-const SYN=[[/aliment|courses|supermarche|super u|carrefour|lidl/,"ali","Supermarché"],[/resto|restaurant|bar|cafe|brasserie|mcdo|kebab|pizza/,"ali","Restaurants & sorties"],
+const SYN=[[/aliment|courses|supermarche|super u|carrefour|lidl/,"sup","Alimentation"],[/resto|restaurant|bar|cafe|brasserie|mcdo|kebab|pizza/,"ali","Restaurants & sorties"],
  [/peage|autoroute/,"tra","Péages"],[/essence|carburant|gasoil|plein/,"tra","Carburant"],[/train|sncf/,"tra","Train"],[/parking/,"tra","Parking"],[/bus|metro|uber|taxi/,"tra","Transports en commun"],
  [/rembours|cpam|mutuelle/,"san","Remboursements"],[/pharmacie/,"san","Pharmacie"],[/medecin|docteur|dentiste|orthodont/,"san","Médecin"],[/opticien|lunettes/,"san","Optique"],
  [/crossfit/,"spo","CrossFit"],[/complement|proteine|nutri/,"spo","Compléments alimentaires"],[/sport/,"spo","Équipement & coaching"],
@@ -910,7 +910,8 @@ function vOpsSaisir(){
     h+=`<section class="card"><div class="ch"><h2>Virement entre mes comptes</h2><span class="s">compte courant ↔ livrets, Trade Republic…</span></div>
     <form class="form" id="virForm" autocomplete="off"><div class="fld" style="grid-column:1/-1">${kindBtns}</div>
      <div class="fld"><label for="vir-from">De</label><select class="in" id="vir-from">${accOpt("cc")}</select></div>
-     <div class="fld"><label for="vir-to">Vers</label><select class="in" id="vir-to">${accOpt("ldd")}</select></div>
+     <div class="fld"><label for="vir-to">Vers</label><select class="in" id="vir-to">${accOpt("ldd")}<option value="ext">Compte externe (je paie quelqu'un)</option></select></div>
+     <div class="fld" id="vir-ext-w" hidden style="grid-column:1/-1"><div class="muted" style="font-size:12.5px;margin-bottom:6px">Virement vers une personne ou une entreprise : c'est une dépense, choisis sa catégorie.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><select class="in" id="vir-cat">${catOptions("dep","ali")}</select><select class="in" id="vir-sub">${subOptions("ali","")}</select></div></div>
      <div class="fld"><label for="vir-amt">Montant (€)</label><input class="in num" id="vir-amt" inputmode="decimal" placeholder="0,00" required></div>
      <div class="fld"><label for="vir-date">Date</label><input class="in" type="date" id="vir-date" value="${defDate}"></div>
      <div class="fld"><label for="vir-label">Motif</label><input class="in" id="vir-label" placeholder="Ex. fonds d'urgence"></div>
@@ -1078,7 +1079,7 @@ async function ocrText(file,onP){
   finally{ try{ await worker.terminate(); }catch(e){} }
   return best;
 }
-const TK_CLS={alim:["🍎 Alimentation","ali","Supermarché"],hyg:["🧴 Hygiène & entretien","ali","Hygiène & entretien"],alc:["🥃 Alcool","ali","Alcool"],mai:["🏠 Maison & divers","ali","Maison & divers"]};
+const TK_CLS={alim:["🍎 Alimentation","sup","Alimentation"],hyg:["🧴 Hygiène & entretien","sup","Produits entretien - hygiène"],alc:["🥃 Alcool","ali","Alcool"],mai:["🏠 Maison & divers","ali","Maison & divers"]};
 const n2=x=>parseFloat(String(x).replace(/\s/g,"").replace(",","."));
 function tkNorm(n){ return n.toUpperCase().replace(/\s+/g," ").trim(); }
 function parseTicketU(text){ text=text.replace(/[ \t\u00a0]+/g," ");
@@ -2243,6 +2244,8 @@ document.addEventListener("change",e=>{
   if(el.id==="r-cat"){ $("#r-sub").innerHTML=subOptions(el.value,""); }
   if(el.dataset.fonds){ const P=S().prefs, m=Object.assign({},fondsMap()); if(el.checked) m[el.dataset.fonds]=m[el.dataset.fonds]>0?m[el.dataset.fonds]:100; else delete m[el.dataset.fonds]; P.fondsPct=m; saveSettings(); render(); return; }
   if(el.dataset.fondspct){ const v=Math.max(0,Math.min(100,Math.round(parseAmt(el.value)))); const P=S().prefs, m=Object.assign({},fondsMap()); if(!isFinite(v)){ render(); return; } if(v>0) m[el.dataset.fondspct]=v; else delete m[el.dataset.fondspct]; P.fondsPct=m; saveSettings(); render(); return; }
+  if(el.id==="vir-to"){ const w=$("#vir-ext-w"); if(w) w.hidden=el.value!=="ext"; }
+  if(el.id==="vir-cat"){ $("#vir-sub").innerHTML=subOptions(el.value,""); }
   if(el.id==="cn-kind"){ const w=$("#cn-grp-w"); if(w) w.hidden=el.value!=="dep"; }
   if(el.id==="av-cat"){ $("#av-sub").innerHTML=subOptions(el.value,""); }
   if(el.id==="av-acc"){ const w=$("#av-card-w"); if(w) w.hidden=el.value!=="cc"; }
@@ -2314,7 +2317,11 @@ document.addEventListener("submit",e=>{
   if(f.id==="payeForm"){ const v=parseAmt($("#pa-amt").value); if(!(v>0)){ toast("Indique le montant viré"); return; } const d=$("#pa-date").value||todayISO(), mk=mkOf(d);
     setMonthOps(mk,[...opsOf(mk),{id:uid(),d,amt:v,label:"Salaire à détailler (bulletin à déposer)",cat:"rev",sub:"Salaire",acc:"cc",note:"",todoPaie:true}]); state.payeOpen=false; state.month=mk; render(); toast("Salaire enregistré : "+eur(v)); return; }
   if(f.id==="virForm"){ const v=parseAmt($("#vir-amt").value); if(!(v>0)){ toast("Indique un montant"); return; }
-    const A=S().accounts.find(x=>x.id===$("#vir-from").value), B=S().accounts.find(x=>x.id===$("#vir-to").value); if(!A||!B||A.id===B.id){ toast("Choisis deux comptes différents"); return; }
+    const A=S().accounts.find(x=>x.id===$("#vir-from").value); const toExt=$("#vir-to").value==="ext";
+    if(toExt){ if(!A){ toast("Choisis le compte débité"); return; } const d0=$("#vir-date").value||todayISO(), lab0=$("#vir-label").value.trim(); if(!lab0){ toast("Indique à qui ou pourquoi (motif)"); return; }
+      const op={id:uid(),d:d0,amt:-v,label:lab0,cat:$("#vir-cat").value,sub:$("#vir-sub").value,acc:A.id,note:"Virement externe"}; if(A.type!=="courant"){ A.balance=r2((Number(A.balance)||0)-v); A.balanceDate=d0; }
+      setMonthOps(mkOf(d0),[...opsOf(mkOf(d0)),op]); saveSettings(); state.form.kind="dep"; render(); toast("Paiement par virement enregistré"); return; }
+    const B=S().accounts.find(x=>x.id===$("#vir-to").value); if(!A||!B||A.id===B.id){ toast("Choisis deux comptes différents"); return; }
     const d=$("#vir-date").value||todayISO(), mk=mkOf(d), lab=$("#vir-label").value.trim();
     const sav=x=>x.type!=="courant"; const subOf=x=>x.id==="av"?"Assurance-vie":x.id==="per"?"PER":x.type==="livret"?"Livrets":"ETF / PEA";
     const add=[]; const upd=(x,delta)=>{ if(sav(x)){ x.balance=Math.round(((Number(x.balance)||0)+delta)*100)/100; x.balanceDate=d; } };
@@ -2398,7 +2405,7 @@ const RULES=[
  [/VEHICULE MOINS 50CM3/,"ass","Scooter",1],[/AVANSSUR/,"ass","Direct Assurance",1],
  [/BOUYGUES/,"abo","Téléphone",1],[/NETFLIX|DISNEY|SPOTIFY|AMAZON PRIME|AMZ DIGITAL/i,"abo","Streaming & musique",1],[/OPENAI|CLAUDE|ANTHROPIC|SUNO|PCLOUD/i,"abo","IA & logiciels",1],
  [/FDJ/,"jeu","Mises FDJ"],[/SEANCE/,"san","Séances"],[/PHARMA/,"san","Pharmacie"],[/DR |MEDECIN/,"san","Médecin"],[/OPTIC/,"san","Optique"],
- [/MAGASIN U|SUPER U|CARREFOUR|CRF |INTERMARCHE|LIDL|LECLERC|AUCHAN|MONOPRIX|FRANPRIX|SUPERMARCHE|BOULANG|FOURNIL/i,"ali","Supermarché"],
+ [/MAGASIN U|SUPER U|CARREFOUR|CRF |INTERMARCHE|LIDL|LECLERC|AUCHAN|MONOPRIX|FRANPRIX|SUPERMARCHE|BOULANG|FOURNIL/i,"sup","Alimentation"],
  [/TICKET RES|RESTAU|BRASSERIE|PIZZ|MCDONALD|BURGER|KFC|TACOS|SUSHI|BAR |PUB|CAFE|STARBUCKS|FOLIE DOUCE|ISLAMORADA|CHEZ /i,"ali","Restaurants & sorties"],
  [/APRR|ATMB|ASF |SANEF|AUTOROUTE|A R E A|TUNNEL/i,"tra","Péages"],[/SNCF|TRAIN|ALMA/i,"tra","Train"],[/RATP|NAVIGO|UBER|BUS/i,"tra","Transports en commun"],[/STATION|TOTAL|ESSO|SHELL|AGIP|AVIA/i,"tra","Carburant"],[/PARKING|STATIONNEMENT/i,"tra","Parking"],
  [/STBMA|SKI|FORFAIT/i,"loi","Ski"],[/CINE|BOWLING|LASER/i,"loi","Sorties & activités"],[/FNAC|STEAM|TOURNIER/i,"loi","Culture"],
@@ -2475,6 +2482,11 @@ function doImportCSV(){
 /* =====================================================================
    DÉMARRAGE
    ===================================================================== */
+function healOrphans(s){ if(!(s.cats||[]).length) return 0; const known=new Set(s.cats.map(c=>c.id)); let n=0;
+  const fix=o=>{ if(!o||!o.cat||o.cat.length<8||known.has(o.cat)) return false; if(/coiff/i.test(o.sub||"")){ o.cat="coi"; o.sub="Coupe"; } else { o.cat="div"; o.sub="À identifier"; } n++; return true; };
+  remapOps(fix);
+  for(const k of Object.keys(s.plafonds||{})){ const c=(k.split(":")[1]||"").split("/")[0]; if(c&&c.length>=8&&!known.has(c)){ delete s.plafonds[k]; n++; } }
+  if(n) Store.saveSettings(); return n; }
 function migrate(){
   const s=S(); if(!s) return; s.prefs=s.prefs||{};
   if(!s.prefs.v2){
@@ -2580,6 +2592,20 @@ function migrate(){
   if(!s.prefs.v13){ for(const r of (s.recurring||[])) if(r.id==="salairefixesyn30") r.label="Salaire fixe Synovo (avant impôt, calculé)"; s.prefs.v13=true; Store.saveSettings(); }
   if(!s.prefs.v12){ s.commissions=[]; s.prefs.v12=true; Store.saveSettings(); }
   if(!s.prefs.v11){ const c=s.cats.find(x=>x.id==="ali"); if(c&&!c.subs.includes("Coiffeur")) c.subs.push("Coiffeur"); s.prefs.fondsCible=12000; s.prefs.fondsAccounts=["ldd"]; s.prefs.v11=true; Store.saveSettings(); }
+  if(!s.prefs.v17){
+    const C=id=>s.cats.find(c=>c.id===id); const pal=["#34D399","#F472B6"];
+    const mkc=(id,name,subs,col)=>{ if(!C(id)){ const at=s.cats.findIndex(c=>c.id==="ali"); s.cats.splice(at<0?s.cats.length:at+1,0,{id,name,kind:"dep",color:col,subs}); } else subs.forEach(x=>{ if(!C(id).subs.includes(x)) C(id).subs.push(x); }); };
+    mkc("sup","Supermarché",["Alimentation","Entretien maison","Produits entretien - hygiène"],pal[0]);
+    mkc("coi","Coiffeur",["Coupe","Produits hygiène"],pal[1]);
+    s.groupMap=s.groupMap||{}; for(const k of ["sup/Alimentation","sup/Entretien maison","sup/Produits entretien - hygiène","coi/Coupe","coi/Produits hygiène"]) s.groupMap[k]="ess";
+    const MV=[["ali","Supermarché","sup","Alimentation"],["ali","Hygiène & entretien","sup","Produits entretien - hygiène"],["ali","Coiffeur","coi","Coupe"]];
+    remapOps(o=>{ for(const [c1,s1,c2,s2] of MV) if(o.cat===c1&&o.sub===s1){ o.cat=c2; o.sub=s2; return true; } return false; });
+    const ali=C("ali"); if(ali) ali.subs=ali.subs.filter(x=>!["Supermarché","Hygiène & entretien","Coiffeur"].includes(x));
+    for(const store of [s.plafonds,s.budgets,s.groupMap]){ if(!store) continue; for(const [c1,s1,c2,s2] of MV){ for(const pre of ["ess:","non:",""]){ const k1=pre+c1+"/"+s1, k2=pre+c2+"/"+s2; if(k1 in store){ if(!(k2 in store)) store[k2]=store[k1]; delete store[k1]; } } } }
+    s.plafLink=Object.assign({},s.plafLink,{"coi/Produits hygiène":"sup/Produits entretien - hygiène"});
+    s.prefs.v17=true; Store.saveSettings();
+  }
+  healOrphans(s);
   { const t=s.prefs.targets; if(t&&t.ess===70&&t.non===10&&t.det===20&&!t.epa){ s.prefs.targets={ess:50,non:30,det:20,epa:0}; Store.saveSettings(); } }
 }
 Store.init(()=>{ state.ready=true; migrate(); render(); });
