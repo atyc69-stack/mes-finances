@@ -598,12 +598,13 @@ function recvRows(L){ return L.map(x=>`<div class="row" style="flex-wrap:wrap"><
 function vRecevoir(){ const L=recvItems(), tot=L.reduce((a,x)=>a+x.amt,0);
   return `<section class="card"><div class="ch"><h2>À recevoir</h2><span class="s">${L.length?eur(tot):""}</span></div>${L.length?recvRows(L)+`<p class="muted" style="font-size:12px;margin:8px 0 0">Touche « Reçu » quand l'argent est arrivé. Pour une avance, l'entrée d'argent est créée toute seule sur ton compte.</p>`:`<p class="muted" style="margin:6px 0">Rien à recevoir pour le moment.</p>`}</section>`; }
 function ptLists(){
-  const m0=nowMk(), L={vu:[],deb:[],debRec:[],creRec:[],recv:[]};
+  const m0=nowMk(), L={vu:[],vuRec:[],deb:[],debRec:[],creRec:[],recv:[]};
   for(const md of [m0,addM(m0,1)]) if(!cardSettled(md)) for(const o of cycleOps(md)){ if(o.spl&&!o.splOrig) continue; if(L.vu.some(x=>x.id===o.id)||L.deb.some(x=>x.id===o.id)) continue; const st=cardState(o); if(st==="saisie") L.vu.push(o); else if(st==="bank") L.deb.push(o); }
+  { const today=todayISO(), seen=new Set(); for(const md of [m0,addM(m0,1)]) if(!cardSettled(md)){ const from=addM(md,-1)+"-20", to=md+"-19"; for(const m of [addM(md,-1),md]) for(const x of recStatus(m)){ if(x.paid||!x.r.card||x.amt>=0||x.date<from||x.date>to||x.date>today) continue; const k=x.r.id+"|"+m; if(seen.has(k)) continue; seen.add(k); L.vuRec.push({x,m}); } } }
   for(const x of recStatus(m0)) if(!x.paid&&!x.r.card){ if(x.amt<0) L.debRec.push(x); else if(x.amt>0) L.creRec.push(x); }
   for(const m of allMonths()) for(const o of opsOf(m)){ if(o.pro&&o.pro.status==="attente") L.recv.push({o,m,k:"ndf"}); else if(o.av&&o.av.status==="attente") L.recv.push({o,m,k:"av"}); else if(o.health==="avance") L.recv.push({o,m,k:"san"}); }
   L.debRecN=L.debRec.filter(x=>x.r.cat!=="cre").length+(L.debRec.some(x=>x.r.cat==="cre")?1:0);
-  L.nDeb=L.vu.length+L.deb.length+L.debRecN; L.nCre=L.creRec.length+L.recv.length; L.nVu=L.vu.length;
+  L.nDeb=L.vu.length+L.vuRec.length+L.deb.length+L.debRecN; L.nCre=L.creRec.length+L.recv.length; L.nVu=L.vu.length+L.vuRec.length;
   return L;
 }
 function pointCount(){ const L=ptLists(), m0=nowMk(); let n=L.nDeb+L.nCre; const day=Number(todayISO().slice(8)); if((day>=20)&&!cardSettled(m0)) n++; return n; }
@@ -615,8 +616,8 @@ function ptRecRow(x,m,lab){ const mn=mm=>mLabel(mm).split(" ")[0].toLowerCase();
   return `<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(x.r.label)}</b><small>prévu le ${Number(x.date.slice(8))} ${esc(mn(m))} · ${esc(catName(x.r.cat))}</small></div><span class="a ${x.amt>0?"pos":""}">${sgn(x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-rid="${x.r.id}" data-mk="${m}">${lab}</button></div></div>`; }
 function vPtList(k){
   const L=ptLists(), m0=nowMk(); let h=`<section class="card">`; const empty='<p class="muted" style="font-size:13px;margin:6px 0">Rien à pointer ici.</p>';
-  if(k==="vu"){ h+=`<div class="ch"><h2>Vu à la banque ?</h2><span class="s">${L.vu.length} à confirmer</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Achats saisis par toi, pas encore retrouvés sur ta banque.</p>`+(L.vu.length?L.vu.map(o=>ptBuyRow(o,"vu")).join(""):empty)
-    +`<div class="toolbar" style="margin-top:10px">${L.vu.length?`<button class="btn sm pri" data-act="vu-all">Tout marquer « vu à la banque » (${L.vu.length})</button>`:""}<label class="btn sm" style="cursor:pointer">Ou importer mon relevé (CSV)<input type="file" id="recoFile" accept=".csv,text/csv" hidden></label></div>`+vRecoBox(nowMk()); }
+  if(k==="vu"){ h+=`<div class="ch"><h2>Vu à la banque ?</h2><span class="s">${L.vu.length+L.vuRec.length} à confirmer</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Abonnements et achats saisis par toi, pas encore retrouvés sur ta banque.</p>`+(L.vu.length||L.vuRec.length?L.vuRec.map(e=>`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(e.x.r.label)}</b><small style="white-space:normal">abonnement carte · prévu le ${Number(e.x.date.slice(8))} ${esc(mLabel(e.m).split(" ")[0].toLowerCase())}</small></div><span class="a">${sgn(e.x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-seen="1" data-rid="${e.x.r.id}" data-mk="${e.m}">Je le vois à la banque</button></div></div>`).join("")+L.vu.map(o=>ptBuyRow(o,"vu")).join(""):empty)
+    +`<div class="toolbar" style="margin-top:10px">${L.vu.length+L.vuRec.length?`<button class="btn sm pri" data-act="vu-all">Tout marquer « vu à la banque » (${L.vu.length+L.vuRec.length})</button>`:""}<label class="btn sm" style="cursor:pointer">Ou importer mon relevé (CSV)<input type="file" id="recoFile" accept=".csv,text/csv" hidden></label></div>`+vRecoBox(nowMk()); }
   else if(k==="deb"){ const cre=L.debRec.filter(x=>x.r.cat==="cre"), oth=L.debRec.filter(x=>x.r.cat!=="cre");
     h+=`<div class="ch"><h2>À pointer en débit</h2><span class="s">${L.nDeb}</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Achats carte vus à la banque et prélèvements à venir. Ton solde de compte courant ne bouge que quand tu valides le relevé complet (onglet À pointer › Relevé de carte).</p>`;
     if(L.deb.length) h+=`<div class="toolbar"><button class="btn sm pri" data-act="deb-all">Tout marquer « débité » (${L.deb.length})</button></div>`+L.deb.map(o=>ptBuyRow(o,"deb")).join("");
@@ -726,21 +727,31 @@ function vHome(){
   const settled=cardSettled(m0), c1=cardCycle(m0);
   const plan=fixedPlan(m0); const pend=plan.list.filter(x=>!x.paid&&x.amt<0); const pendTot=pend.reduce((a,x)=>a+x.amt,0);
   const sal=plan.list.find(x=>!x.paid&&x.amt>0&&kindOf(x.r.cat)==="rev");
-  const pm0=m0, payPending=!paieRecue(pm0)&&!!sal;
-  const incPlan=plan.list.filter(x=>!x.paid&&x.amt>0).reduce((a,x)=>a+(x===sal?netFixeNow():x.amt),0);
-  const incExtra=payPending?r2(commsOf(pm0,false)+ndfDue(pm0,true)):0;
+  const payPending=!paieRecue(m0)&&!!sal;
+  const incPlan=payPending?plan.list.filter(x=>!x.paid&&x.amt>0).reduce((a,x)=>a+(x===sal?netFixeNow():x.amt),0):0;
+  const incExtra=payPending?r2(commsOf(m0,false)+ndfDue(m0,true)):0;
+  const payTot=r2(incPlan+incExtra);
   const cardPart=settled?0:c1.val;
-  const prevision=r2((bal||0)+cardPart+pendTot+incPlan+incExtra);
+  const pendNC=pend.filter(x=>!x.r.card), pendCard=pend.filter(x=>x.r.card);
+  const resteTot=r2(pendNC.reduce((a,x)=>a+x.amt,0)+pendCard.reduce((a,x)=>a+x.amt,0)+cardPart);
+  const prevision=r2((bal||0)+resteTot), apresPaie=r2(prevision+payTot);
   let h=banner();
-  // 1. compte
-  h+=`<section class="card"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end">
-     <div><div class="muted" style="font-size:12.5px">Solde aujourd'hui</div><div class="num" style="font-size:clamp(19px,5.6vw,26px);white-space:nowrap">${bal==null?"—":sgn(bal)}</div></div>
-     <div style="text-align:right"><div class="muted" style="font-size:12.5px">Prévisionnel fin de mois</div><div class="num" style="font-size:clamp(19px,5.6vw,26px);white-space:nowrap">${sgn(prevision)}</div></div></div>
-  ${(()=>{ const pm=m0; let l=""; if(payPending){ const pd=sal.date; const bef=pend.filter(x=>!x.r.card&&x.date<=pd).reduce((a,x)=>a+x.amt,0); const aft=r2((bal||0)+bef+netFixeNow()+incExtra); l+=`<div class="muted" style="font-size:12px;margin-top:8px">Juste après ma paie (le ${Number(pd.slice(8))} ${esc(mn(pm))}), avant les achats carte : <b class="num" style="color:var(--ink);font-weight:500">${sgn(aft)}</b></div>`; } const w=recvOther(); if(w>0) l+=`<div class="muted" style="font-size:12px;margin-top:2px">${eur0(w)} en attente de remboursement</div>`;
-     const det=[["Solde aujourd'hui",bal||0],["Prélèvements et échéances à venir",pendTot],[settled?null:"Achats carte débités fin "+mn(pm),cardPart],[incPlan?"Paie attendue (salaire net)":null,incPlan],[incExtra?"Commissions et notes de frais attendues":null,incExtra]].filter(x=>x[0]&&Math.abs(x[1])>0.004);
-     l+=`<details class="more" style="margin-top:8px"><summary style="font-size:12px">Comment c'est calculé ?</summary>${det.map(x=>`<div class="row" style="padding:6px 0"><div class="t"><b style="font-weight:400;font-size:13px">${esc(x[0])}</b></div><span class="a num" style="font-size:13px">${sgn(x[1])}</span></div>`).join("")}<div class="row" style="padding:6px 0;border-bottom:0"><div class="t"><b style="font-size:13px">Prévisionnel fin ${esc(mn(pm))}</b></div><span class="a num" style="font-size:13px">${sgn(prevision)}</span></div></details>`;
-     return l; })()}
-</section>`;
+  // 1. compte : une seule carte, 4 lignes
+  const colF=prevision<-Number(S().prefs.decouvert||0)?"var(--coral)":prevision<0?"var(--amber)":"var(--mint)";
+  const dl=x=>Number(x.date.slice(8))+" "+mn(m0);
+  const cre=pendNC.filter(x=>x.r.cat==="cre"), oth=pendNC.filter(x=>x.r.cat!=="cre");
+  const rw=(l,sub,v)=>`<div class="row" style="padding:6px 0"><div class="t"><b style="font-weight:400;font-size:13px">${esc(l)}</b>${sub?`<small>${esc(sub)}</small>`:""}</div><span class="a num" style="font-size:13px">${sgn(v)}</span></div>`;
+  const sh=(t,v)=>`<div class="row" style="padding:8px 0 4px;border:0"><div class="t"><b style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${t}</b></div><span class="a num" style="font-size:12.5px;color:var(--muted)">${sgn(v)}</span></div>`;
+  const sNC=r2(oth.reduce((a,x)=>a+x.amt,0)+cre.reduce((a,x)=>a+x.amt,0)), sCard=r2(pendCard.reduce((a,x)=>a+x.amt,0)+cardPart);
+  h+=`<section class="card">
+   <div class="muted" style="font-size:12.5px">Solde aujourd'hui</div><div class="num" style="font-size:clamp(22px,6.5vw,30px);white-space:nowrap">${bal==null?"—":sgn(bal)}</div>
+   <details class="more" style="margin-top:10px"><summary style="font-size:13.5px;color:var(--ink)">Reste à débiter d'ici la fin ${esc(mn(m0))} : <b class="num">${sgn(resteTot)}</b> <span class="muted" style="font-size:12px">(voir le détail)</span></summary>
+    ${sh("Prélèvements, loyer, crédits",sNC)}${oth.map(x=>rw(x.r.label,"le "+dl(x),x.amt)).join("")}${cre.length?rw("Mensualités de crédits ("+cre.length+")","le "+dl(cre[0]),cre.reduce((a,x)=>a+x.amt,0)):""}
+    ${sh("Carte bancaire, débitée fin "+mn(m0),sCard)}${settled?"":rw("Achats déjà faits ("+c1.n+")","du "+Number(c1.from.slice(8))+"/"+c1.from.slice(5,7)+" au "+Number(c1.to.slice(8))+"/"+c1.to.slice(5,7),cardPart)}${pendCard.map(x=>rw(x.r.label,"abonnement, le "+dl(x),x.amt)).join("")}
+   </details>
+   <div style="border-top:1px solid var(--line);margin:12px 0 0;padding-top:12px"><div class="muted" style="font-size:12.5px">Fin ${esc(mn(m0))}, avant ta paie du mois</div><div class="num" style="font-size:clamp(26px,8vw,36px);white-space:nowrap;color:${colF}">${sgn(prevision)}</div></div>
+   ${payTot>0?`<p class="muted" style="font-size:12.5px;margin:8px 0 0">Ta paie du ${Number(sal.date.slice(8))} ${esc(mn(m0))} (${sgn(payTot,eur0)}) sert pour le mois suivant : tu démarres ${esc(mn(addM(m0,1)))} à <b class="num" style="color:var(--ink)">${sgn(apresPaie)}</b>.</p>`:""}
+  </section>`;
   // 2. victoire
   const v=victory();
   h+=`<section class="card win" style="padding:14px 16px;background:linear-gradient(135deg,rgba(94,234,212,.16),rgba(124,168,255,.10));border-color:rgba(94,234,212,.35)"><div style="font-size:12px;color:#9FE8DA">Ta victoire du mois · ${esc(v.when)}</div><div style="font-size:16px;font-weight:700;margin-top:4px">${esc(v.title)}</div>${v.detail?`<div style="font-size:13px;margin-top:4px">${esc(v.detail)}</div>`:""}${v.warn?`<div style="font-size:13px;margin-top:4px">${esc(v.warn)}</div>`:""}
@@ -2179,7 +2190,7 @@ document.addEventListener("click",e=>{
     case "st-f": state.stF=t.dataset.k; render(); break;
     case "pt-f": state.ptF=t.dataset.k; render(); break;
     case "op-deb": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ splFlag(o,"debited"); Store.saveMonth(t.dataset.mk); render(); } break; }
-    case "vu-all": { for(const o of ptLists().vu){ splFlag(o,"bank"); } for(const m of allMonths()) Store.saveMonth(m); render(); toast("Tout est noté « vu à la banque »"); break; }
+    case "vu-all": { for(const e of ptLists().vuRec){ const r=e.x.r, mk=e.m; setMonthOps(mk,[...opsOf(mk),{id:uid(),d:e.x.date,amt:recAmount(r,mk),label:r.label,cat:r.cat,sub:r.sub,acc:r.acc||"cc",fixed:kindOf(r.cat)==="dep",recId:r.id,note:"",card:true,bank:true}]); } for(const o of ptLists().vu){ splFlag(o,"bank"); } for(const m of allMonths()) Store.saveMonth(m); render(); toast("Tout est noté « vu à la banque »"); break; }
     case "deb-all": { for(const o of ptLists().deb){ splFlag(o,"debited"); } for(const m of allMonths()) Store.saveMonth(m); render(); toast("Tout est noté « débité »"); break; }
     case "op-tog": state.opOpen[t.dataset.k]=!state.opOpen[t.dataset.k]; render(); break;
     case "op-kind": state.filter.kind=t.dataset.k; render(); break;
@@ -2210,7 +2221,7 @@ document.addEventListener("click",e=>{
     case "rec-amt-no": state.recAmt=null; render(); break;
     case "rec-pay": { const r=S().recurring.find(x=>x.id===t.dataset.rid); const mk=t.dataset.mk; if(!r) break;
       const d=mk+"-"+pad(Math.min(r.day||1,lastDay(mk)));
-      setMonthOps(mk,[...opsOf(mk),{id:uid(),d,amt:recAmount(r,mk),label:r.label,cat:r.cat,sub:r.sub,acc:r.acc||"cc",fixed:kindOf(r.cat)==="dep",recId:r.id,note:"",card:!!r.card}]); state.avJust[r.id]=true; render(); toast(r.card?"Enregistré sur la carte":"Pointé : débité"); break; }
+      setMonthOps(mk,[...opsOf(mk),{id:uid(),d,amt:recAmount(r,mk),label:r.label,cat:r.cat,sub:r.sub,acc:r.acc||"cc",fixed:kindOf(r.cat)==="dep",recId:r.id,note:"",card:!!r.card,...(t.dataset.seen?{bank:true}:{})}]); state.avJust[r.id]=true; render(); toast(r.card?"Enregistré sur la carte":"Pointé : débité"); break; }
     case "edit-rec": state.editRec=t.dataset.id; render(); window.scrollTo({top:0,behavior:"smooth"}); break;
     case "cancel-rec": state.editRec=null; state.recNew=false; render(); break;
     case "av-eq": { const a=$("#av-amt"), r=$("#av-remb"); if(a&&r){ r.value=a.value; avReste(); } break; }
