@@ -1334,7 +1334,15 @@ function vPaies(){
 const DV_SOFTS={"Rubis Santé":["GEF N1","GEF N2","PMT","HL7 ADT Identité"],"Rubis Brancardage":["HL7 ADT Identité","HL7 SIU RDV Bloc","HL7 SIU RDV Imagerie"],"Rubis Transporteur":[],"Rubis Urgences":[]};
 function dvMonthly(x){ const a=parseAmt(String(x.amt==null?"":x.amt))||0; return x.per==="a"?a/12:a; }
 function dvNew(){ const L=uid(); return {d:null,name:"",signed:true,items:[{id:L,kind:"lic",soft:"Rubis Santé",amt:"",per:"m",mk:""},{id:uid(),kind:"inst",parent:L,amt:"",mk:""},{id:uid(),kind:"form",parent:L,amt:"",mk:""}]}; }
-function dvOpen(id){ const d=(S().deals||[]).find(x=>x.id===id); if(!d) return null; return {d:d.id,name:d.name,signed:!!d.signed,items:JSON.parse(JSON.stringify(d.devis||[]))}; }
+function dvOpen(id){ const d=(S().deals||[]).find(x=>x.id===id); if(!d) return null; const items=JSON.parse(JSON.stringify(d.devis||[])); let ref=null;
+  if(!items.length){ const rl=(d.lines||[]).filter(l=>!l.dv&&!(Number(l.brut)>0)&&(Number(l.lic)>0||Number(l.os)>0));
+    if(rl.length){ ref={lic:r2(rl.reduce((a,l)=>a+Number(l.lic||0),0)),os:r2(rl.reduce((a,l)=>a+Number(l.os||0),0)),ids:rl.map(l=>l.id)}; const L=uid(), mk=rl[0].mk||""; items.push({id:L,kind:"lic",soft:"",amt:"",per:"m",mk},{id:uid(),kind:"inst",parent:L,amt:"",mk},{id:uid(),kind:"form",parent:L,amt:"",mk}); } }
+  return {d:d.id,name:d.name,signed:!!d.signed,items,ref,lmk:{},force:false}; }
+function dvRecHtml(){ const dv=state.dv; if(!dv||!dv.ref) return ""; const R=dv.ref, lic=r2(dv.items.filter(x=>x.kind==="lic"||x.kind==="opt").reduce((a,x)=>a+dvMonthly(x),0)), os=r2(dv.items.filter(x=>x.kind!=="lic"&&x.kind!=="opt").reduce((a,x)=>a+dvMonthly(x),0));
+  const dl=r2(R.lic-lic), dO=r2(R.os-os), none=lic===0&&os===0, ok=!none&&Math.abs(dl)<0.01&&Math.abs(dO)<0.01;
+  const gap=(v,l)=>Math.abs(v)<0.01?"":(v>0?"reste "+eur0(v)+" "+l:"en trop : "+eur0(-v)+" "+l);
+  const msg=none?"Rien de réparti pour l'instant : le total validé reste en place.":ok?"✓ Répartition correcte : le total ne change pas.":[gap(dl,"de licence par mois"),gap(dO,"de one shot")].filter(Boolean).join(" · ");
+  return `<div style="border-radius:14px;padding:10px 12px;margin-top:12px;background:${ok?"rgba(74,222,128,.10)":"rgba(255,255,255,.04)"}"><div style="font-size:13px"><b>Total validé</b> : ${R.lic?"licence "+eur0(R.lic)+"/mois":""}${R.lic&&R.os?" · ":""}${R.os?"one shot "+eur0(R.os):""}</div><div class="muted" style="font-size:12.5px;margin-top:3px">Réparti : licence ${eur0(lic)}/mois · one shot ${eur0(os)}</div><div style="font-size:13px;margin-top:5px;font-weight:600;color:${ok?"#4ADE80":none?"var(--muted)":"var(--amber)"}">${msg}</div>${!ok&&!none?`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-top:8px"><input type="checkbox" data-dv="force" ${dv.force?"checked":""}> Je remplace le total validé par ce devis</label>`:""}</div>`; }
 function dvLabel(it,items){ const P=items.find(x=>x.id===it.parent); const soft=P&&P.kind==="lic"?P.soft:(P&&P.parent?((items.find(y=>y.id===P.parent)||{}).soft||""):"");
   if(it.kind==="lic") return "Licence "+(it.soft||"");
   if(it.kind==="opt") return "Option "+(it.opt||"");
@@ -1342,7 +1350,7 @@ function dvLabel(it,items){ const P=items.find(x=>x.id===it.parent); const soft=
   if(it.kind==="form") return "Formation"+(soft?" "+soft:"");
   if(it.kind==="oinst") return "Installation "+(P?P.opt||"":"option");
   return "Ligne"; }
-function dvLines(items,oldLines){ const by={}; for(const it of items){ const a=dvMonthly(it); if(!(a>0)) continue; const k=it.mk||""; const g=by[k]=by[k]||{what:[],lic:0,os:0}; g.what.push(dvLabel(it,items)); if(it.kind==="lic"||it.kind==="opt") g.lic+=a; else g.os+=a; }
+function dvLines(items,oldLines){ const by={}; for(const it of items){ const a=dvMonthly(it); if(!(a>0)) continue; const k=it.mk||""; const g=by[k]=by[k]||{what:[],lic:0,os:0}; g.what.push(dvLabel(it,items).replace(/\s+/g," ").trim()); if(it.kind==="lic"||it.kind==="opt") g.lic+=a; else g.os+=a; }
   return Object.keys(by).sort().map(k=>{ const prev=(oldLines||[]).find(l=>l.dv&&(l.mk||"")===k); return {id:prev?prev.id:"dv"+(k||"none")+uid().slice(0,3),dv:true,what:by[k].what.join(" + "),mk:k,lic:r2(by[k].lic),os:r2(by[k].os),locked:prev?!!prev.locked:false}; }); }
 function dvSumHtml(){ const dv=state.dv; if(!dv) return ""; const R=cRates(), M=m=>mLabel(m).split(" ")[0].toLowerCase(); const L=dvLines(dv.items,[]);
   if(!L.length) return '<p class="muted" style="font-size:12.5px;margin:0">Remplis au moins un montant : le résumé mois par mois apparaît ici.</p>';
@@ -1373,15 +1381,25 @@ function vDevis(){
    <div class="fld"><label style="font-size:12px">Contrat</label><select class="in" data-dv="signed"><option value="1" ${dv.signed?"selected":""}>Signé</option><option value="0" ${dv.signed?"":"selected"}>À signer</option></select></div>
    ${blocks}
    <div style="margin-top:14px"><button class="btn sm" style="border-color:#38BDF8;color:#38BDF8" data-act="dv-add-soft">+ Ajouter un logiciel (une autre licence)</button></div>
-   ${legacy.length?`<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:10px"><div class="muted" style="font-size:12.5px;margin-bottom:4px">Lignes saisies avant le devis</div>${legacy.map(l=>`<div class="row" style="padding:6px 0"><div class="t" style="white-space:normal"><b style="font-weight:400;white-space:normal;font-size:13px">${esc(l.what||"Facturation")}</b><small style="white-space:normal">${l.mk?"facturé en "+esc(mLabel(l.mk).toLowerCase()):"pas de mois"}${Number(l.lic)?" · licence "+eur0(l.lic)+"/mois":""}${Number(l.os)?" · one shot "+eur0(l.os):""}${Number(l.brut)>0?" · commission brute saisie "+eur0(l.brut):""}</small></div><button class="ibtn" data-act="line-del" data-d="${D.id}" data-l="${l.id}" aria-label="Supprimer la ligne">${ICON.del}</button></div>`).join("")}</div>`:""}
+   ${legacy.length?`<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:10px"><div style="font-size:13px;font-weight:800;color:#38BDF8;text-transform:uppercase;letter-spacing:.02em;margin-bottom:4px">Contrat déjà enregistré</div>${legacy.map(l=>{ const mv=(dv.lmk&&dv.lmk[l.id]!=null)?dv.lmk[l.id]:(l.mk||""); return `<div style="padding:6px 0"><div class="row" style="padding:2px 0"><div class="t" style="white-space:normal"><b style="font-weight:400;white-space:normal;font-size:13px">${esc(l.what||"Facturation")}</b><small style="white-space:normal">${Number(l.lic)?"licence "+eur0(l.lic)+"/mois":""}${Number(l.lic)&&Number(l.os)?" · ":""}${Number(l.os)?"one shot "+eur0(l.os):""}${Number(l.brut)>0?"commission brute saisie "+eur0(l.brut):""}</small></div><button class="ibtn" data-act="line-del" data-d="${D.id}" data-l="${l.id}" aria-label="Supprimer la ligne">${ICON.del}</button></div><div class="fld" style="margin:4px 0 0"><label style="font-size:12px">Facturé en</label><input class="in" type="month" data-dv="lmk" data-id="${l.id}" value="${esc(mv)}"></div></div>`; }).join("")}${dv.ref?'<div class="muted" style="font-size:12px;margin-top:6px">Tu peux changer le mois ci-dessus, ou détailler le contrat ci-dessous : le total validé ne bouge pas tant que la répartition est correcte.</div>':""}</div>`:""}
+   <div id="dvRec">${dvRecHtml()}</div>
    <div style="background:rgba(255,255,255,.04);border-radius:14px;padding:10px 12px;margin-top:14px"><div class="muted" style="font-size:12px;margin-bottom:4px">Ce que ça donne, mois par mois</div><div id="dvSum">${dvSumHtml()}</div></div>
    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="dv-save">Enregistrer le devis</button><button class="btn" data-act="dv-cancel">Annuler</button>${D?(state.confirm==="deal|"+D.id?`<button class="confirm" data-act="deal-del" data-id="${D.id}">Supprimer le contrat ?</button>`:`<button class="ibtn" data-act="ask" data-key="deal|${D.id}" aria-label="Supprimer le contrat">${ICON.del}</button>`):""}</div></section>`;
 }
 function dvSave(){ const dv=state.dv; if(!dv) return; const name=(dv.name||"").trim(); if(!name){ toast("Donne un nom au contrat"); return; }
-  const items=dv.items.filter(x=>x.kind==="lic"?(x.soft||dvMonthly(x)>0):true).map(x=>Object.assign({},x,{amt:dvMonthly(x)>0?String(x.amt).replace(",","."):""}));
+  const items=dv.items.filter(x=>dvMonthly(x)>0||(x.kind==="lic"&&x.soft)).map(x=>Object.assign({},x,{amt:dvMonthly(x)>0?String(x.amt).replace(",","."):""}));
+  const has=items.some(x=>dvMonthly(x)>0);
   let d=dv.d?(S().deals||[]).find(x=>x.id===dv.d):null;
   if(!d){ d={id:uid(),name,signed:!!dv.signed,lines:[]}; (S().deals=S().deals||[]).push(d); }
-  d.name=name; d.signed=!!dv.signed; d.devis=items; d.lines=(d.lines||[]).filter(l=>!l.dv).concat(dvLines(items,d.lines||[]));
+  const ref=dv.ref;
+  if(ref&&has){ const lic=r2(items.filter(x=>x.kind==="lic"||x.kind==="opt").reduce((a,x)=>a+dvMonthly(x),0)), os=r2(items.filter(x=>x.kind!=="lic"&&x.kind!=="opt").reduce((a,x)=>a+dvMonthly(x),0));
+    if((Math.abs(ref.lic-lic)>=0.01||Math.abs(ref.os-os)>=0.01)&&!dv.force){ toast("Le détail ne correspond pas encore au total validé"); return; } }
+  d.name=name; d.signed=!!dv.signed;
+  for(const l of (d.lines||[])) if(dv.lmk&&dv.lmk[l.id]!=null&&/^\d{4}-\d{2}$|^$/.test(dv.lmk[l.id])) l.mk=dv.lmk[l.id];
+  if(ref&&!has){ state.dv=null; state.dvPick=null; saveSettings(); render(); toast("Enregistré"); return; }
+  const refIds=ref?ref.ids:[], old=d.lines||[];
+  const gen=dvLines(items,old.map(l=>refIds.includes(l.id)?Object.assign({},l,{dv:true}):l));
+  d.devis=items; d.lines=old.filter(l=>!l.dv&&!refIds.includes(l.id)).concat(gen);
   state.dv=null; state.dvPick=null; saveSettings(); render(); toast("Devis enregistré"); }
 function vCommissions(){
   const R=cRates(), D=S().deals||[], now=nowMk(); const st=state;
@@ -2475,9 +2493,11 @@ document.addEventListener("input",e=>{
 });
 function dvSync(el){ const dv=state.dv; if(!dv||!el.dataset||!el.dataset.dv) return false; const f=el.dataset.dv;
   if(f==="name"){ dv.name=el.value; return true; } if(f==="signed"){ dv.signed=el.value==="1"; return true; }
+  if(f==="lmk"){ dv.lmk=dv.lmk||{}; dv.lmk[el.dataset.id]=el.value; return true; }
+  if(f==="force"){ dv.force=!!el.checked; return true; }
   const it=dv.items.find(x=>x.id===el.dataset.id); if(!it) return true; it[f]=el.value;
   if(f==="soft"){ const keep=new Set(DV_SOFTS[el.value]||[]); const drop=dv.items.filter(x=>x.parent===it.id&&x.kind==="opt"&&!keep.has(x.opt)).map(x=>x.id); dv.items=dv.items.filter(x=>!drop.includes(x.id)&&!drop.includes(x.parent)); state.dvPick=null; render(); return true; }
-  const sm=$("#dvSum"); if(sm) sm.innerHTML=dvSumHtml(); return true; }
+  const sm=$("#dvSum"); if(sm) sm.innerHTML=dvSumHtml(); const rc=$("#dvRec"); if(rc) rc.innerHTML=dvRecHtml(); return true; }
 document.addEventListener("input",e=>{ if(e.target.dataset&&e.target.dataset.dv) dvSync(e.target); });
 document.addEventListener("change",e=>{ if(e.target.dataset&&e.target.dataset.dv) dvSync(e.target); });
 document.addEventListener("input",e=>{ if(e.target.matches&&e.target.matches("[data-spl-amt]")) splReste(); });
