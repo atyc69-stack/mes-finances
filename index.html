@@ -1340,7 +1340,7 @@ function dvOpen(id){ const d=(S().deals||[]).find(x=>x.id===id); if(!d) return n
   return {d:d.id,name:d.name,signed:!!d.signed,items,ref,lmk:{},ledit:{},force:false}; }
 function dvLv(l,f){ const e=(state.dv&&state.dv.ledit&&state.dv.ledit[l.id])||{}; return e[f]!=null?e[f]:(l[f]||""); }
 function dvRefCalc(){ const dv=state.dv; if(!dv||!dv.ref) return; const D=(S().deals||[]).find(x=>x.id===dv.d); if(!D) return; const ls=(D.lines||[]).filter(l=>dv.ref.ids.includes(l.id)); dv.ref.lic=r2(ls.reduce((a,l)=>a+(parseAmt(String(dvLv(l,"lic")))||0),0)); dv.ref.os=r2(ls.reduce((a,l)=>a+(parseAmt(String(dvLv(l,"os")))||0),0)); }
-function dvRecHtml(){ const dv=state.dv; if(!dv||!dv.ref) return ""; const R=dv.ref, lic=r2(dv.items.filter(x=>x.kind==="lic"||x.kind==="opt").reduce((a,x)=>a+dvMonthly(x),0)), os=r2(dv.items.filter(x=>x.kind!=="lic"&&x.kind!=="opt").reduce((a,x)=>a+dvMonthly(x),0));
+function dvRecHtml(){ const dv=state.dv; if(!dv||!dv.ref||!dv.detail) return ""; const R=dv.ref, lic=r2(dv.items.filter(x=>x.kind==="lic"||x.kind==="opt").reduce((a,x)=>a+dvMonthly(x),0)), os=r2(dv.items.filter(x=>x.kind!=="lic"&&x.kind!=="opt").reduce((a,x)=>a+dvMonthly(x),0));
   const dl=r2(R.lic-lic), dO=r2(R.os-os), none=lic===0&&os===0, ok=!none&&Math.abs(dl)<0.01&&Math.abs(dO)<0.01;
   const gap=(v,l)=>Math.abs(v)<0.01?"":(v>0?"reste "+eur0(v)+" "+l:"en trop : "+eur0(-v)+" "+l);
   const msg=none?"Rien de réparti pour l'instant : le total validé reste en place.":ok?"✓ Répartition correcte : le total ne change pas.":[gap(dl,"de licence par mois"),gap(dO,"de one shot")].filter(Boolean).join(" · ");
@@ -1366,7 +1366,8 @@ function vDevis(){
   const del=it=>`<button class="ibtn" data-act="dv-del" data-id="${it.id}" aria-label="Supprimer la ligne">${ICON.del}</button>`;
   const T=(txt,extra)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:13px;font-weight:800;color:#38BDF8;text-transform:uppercase;letter-spacing:.02em">${txt}</b>${extra||""}</div>`;
   const G=h=>`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">${h}</div>`;
-  const blocks=dv.items.filter(x=>x.kind==="lic").map(L=>{
+  const hide=!!dv.ref&&!dv.detail;
+  const blocks=hide?"":dv.items.filter(x=>x.kind==="lic").map(L=>{
     const kids=dv.items.filter(x=>x.parent===L.id), opts=kids.filter(x=>x.kind==="opt"), avail=(DV_SOFTS[L.soft]||[]).filter(o=>!opts.some(x=>x.opt===o));
     let h=`<div style="border-top:1px solid var(--line);padding-top:12px;margin-top:12px">${T("Licence",del(L))}
       <div class="fld" style="margin:6px 0 0"><label style="font-size:12px">Logiciel</label><select class="in" data-dv="soft" data-id="${L.id}"><option value="">Choisir le logiciel…</option>${Object.keys(DV_SOFTS).map(k=>`<option ${L.soft===k?"selected":""}>${k}</option>`).join("")}</select></div>${G(amt(L,L.per==="a"?"Montant par an":"Montant par mois")+per(L))}${G(mkf(L)+"<div></div>")}`;
@@ -1382,15 +1383,15 @@ function vDevis(){
    <div class="fld"><label style="font-size:12px">Nom du contrat (client)</label><input class="in" data-dv="name" value="${esc(dv.name)}" placeholder="Ex. CH Carcassonne"></div>
    <div class="fld"><label style="font-size:12px">Contrat</label><select class="in" data-dv="signed"><option value="1" ${dv.signed?"selected":""}>Signé</option><option value="0" ${dv.signed?"":"selected"}>À signer</option></select></div>
    ${blocks}
-   <div style="margin-top:14px"><button class="btn sm" style="border-color:#38BDF8;color:#38BDF8" data-act="dv-add-soft">+ Ajouter un logiciel (une autre licence)</button></div>
+   ${hide?`<div style="margin-top:14px"><button class="btn sm" style="border-color:#38BDF8;color:#38BDF8" data-act="dv-detail">Détailler le contrat (licence, installation, formation…)</button></div>`:`<div style="margin-top:14px"><button class="btn sm" style="border-color:#38BDF8;color:#38BDF8" data-act="dv-add-soft">+ Ajouter un logiciel (une autre licence)</button></div>`}
    ${legacy.length?`<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:10px"><div style="font-size:13px;font-weight:800;color:#38BDF8;text-transform:uppercase;letter-spacing:.02em;margin-bottom:4px">Contrat déjà enregistré</div>${legacy.map(l=>{ const mv=(dv.lmk&&dv.lmk[l.id]!=null)?dv.lmk[l.id]:(l.mk||""); return `<div style="padding:6px 0"><div class="row" style="padding:2px 0"><div class="t" style="white-space:normal"><b style="font-weight:400;white-space:normal;font-size:13px">${esc(l.what||"Facturation")}</b></div><button class="ibtn" data-act="line-del" data-d="${D.id}" data-l="${l.id}" aria-label="Supprimer la ligne">${ICON.del}</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0">${Number(l.brut)>0?`<div class="fld" style="margin:0;grid-column:1/-1"><label style="font-size:12px">Commission brute saisie (€)</label><input class="in num" inputmode="decimal" data-dv="lbrut" data-id="${l.id}" value="${esc(String(dvLv(l,"brut")).replace(".",","))}"></div>`:`<div class="fld" style="margin:0"><label style="font-size:12px">Licence (€ par mois)</label><input class="in num" inputmode="decimal" data-dv="llic" data-id="${l.id}" value="${esc(String(dvLv(l,"lic")).replace(".",","))}" placeholder="0"></div><div class="fld" style="margin:0"><label style="font-size:12px">One shot (€)</label><input class="in num" inputmode="decimal" data-dv="los" data-id="${l.id}" value="${esc(String(dvLv(l,"os")).replace(".",","))}" placeholder="0"></div>`}</div><div class="fld" style="margin:4px 0 0"><label style="font-size:12px">Facturé en</label><div style="display:flex;gap:6px;align-items:center"><input class="in" type="month" data-dv="lmk" data-id="${l.id}" value="${esc(mv)}" style="flex:1;min-width:0">${mv?`<button class="btn sm" type="button" style="height:36px;padding:0 9px;font-size:12px" data-act="dv-clear-l" data-id="${l.id}">Sans mois</button>`:'<span class="muted" style="font-size:12px">sans mois</span>'}</div></div></div>`; }).join("")}${dv.ref?'<div class="muted" style="font-size:12px;margin-top:6px">Tu peux changer le mois ci-dessus, ou détailler le contrat ci-dessous : le total validé ne bouge pas tant que la répartition est correcte.</div>':""}</div>`:""}
    <div id="dvRec">${dvRecHtml()}</div>
-   <div style="background:rgba(255,255,255,.04);border-radius:14px;padding:10px 12px;margin-top:14px"><div class="muted" style="font-size:12px;margin-bottom:4px">Ce que ça donne, mois par mois</div><div id="dvSum">${dvSumHtml()}</div></div>
+   <div style="background:rgba(255,255,255,.04);border-radius:14px;padding:10px 12px;margin-top:14px"><div class="muted" style="font-size:12px;margin-bottom:4px">Ce que ça donne, mois par mois</div><div id="dvSum">${hide?"<p class='muted' style='font-size:12.5px;margin:0'>Change les montants ou le mois ci-dessus, puis enregistre.</p>":dvSumHtml()}</div></div>
    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="dv-save">Enregistrer le devis</button><button class="btn" data-act="dv-cancel">Annuler</button>${D?(state.confirm==="deal|"+D.id?`<button class="confirm" data-act="deal-del" data-id="${D.id}">Supprimer le contrat ?</button>`:`<button class="ibtn" data-act="ask" data-key="deal|${D.id}" aria-label="Supprimer le contrat">${ICON.del}</button>`):""}</div></section>`;
 }
 function dvSave(){ const dv=state.dv; if(!dv) return; const name=(dv.name||"").trim(); if(!name){ toast("Donne un nom au contrat"); return; }
   const items=dv.items.filter(x=>dvMonthly(x)>0||(x.kind==="lic"&&x.soft)).map(x=>Object.assign({},x,{amt:dvMonthly(x)>0?String(x.amt).replace(",","."):""}));
-  const has=items.some(x=>dvMonthly(x)>0);
+  const has=(!dv.ref||dv.detail)&&items.some(x=>dvMonthly(x)>0);
   let d=dv.d?(S().deals||[]).find(x=>x.id===dv.d):null;
   if(!d){ d={id:uid(),name,signed:!!dv.signed,lines:[]}; (S().deals=S().deals||[]).push(d); }
   for(const l of (d.lines||[])){ const e=dv.ledit&&dv.ledit[l.id]; if(!e||l.dv) continue; if(e.lic!=null) l.lic=parseAmt(String(e.lic))||0; if(e.os!=null) l.os=parseAmt(String(e.os))||0; if(e.brut!=null){ const b=parseAmt(String(e.brut))||0; l.brut=b>0?b:undefined; } }
@@ -2355,6 +2356,7 @@ document.addEventListener("click",e=>{
     case "dv-clear-l": { state.dv.lmk=state.dv.lmk||{}; state.dv.lmk[t.dataset.id]=""; render(); break; }
     case "dv-new": state.dv=dvNew(); state.dvPick=null; render(); setTimeout(()=>{ const c=$("#dvCard"); if(c) c.scrollIntoView({block:"start"}); },50); break;
     case "dv-open": { const v=dvOpen(t.dataset.d); if(v){ state.dv=v; state.dvPick=null; render(); setTimeout(()=>{ const c=$("#dvCard"); if(c) c.scrollIntoView({block:"start"}); },50); } break; }
+    case "dv-detail": state.dv.detail=true; render(); break;
     case "dv-cancel": state.dv=null; state.dvPick=null; render(); break;
     case "dv-save": dvSave(); break;
     case "dv-pick": state.dvPick=state.dvPick===t.dataset.id?null:t.dataset.id; render(); break;
