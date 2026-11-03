@@ -774,17 +774,13 @@ function vHome(){
   // 5. bientôt
   const soon=soonList();
   if(soon.length) h+=`<section class="card" style="background:linear-gradient(135deg,rgba(255,184,107,.10),rgba(255,122,107,.06));border-color:rgba(255,184,107,.3)"><div class="ch"><h2>🎉 Bientôt</h2></div>${soon.map((x,i)=>`<div class="row"><div class="t"><b>${i?"🎯":"🎉"} ${i?esc(mLabel(x.mk)):"Dès "+esc(mn(x.mk))}</b><small style="white-space:normal">fin ${esc(x.txt)}</small></div><span class="a pos">+${eur0(x.tot)}/mois</span></div>`).join("")}</section>`;
-  // 4. quotidien
-  const G=planGroups(m0); const budQ=G.ess.plaf+G.non.plaf+G.det.plaf; const spent=G.ess.spent+G.non.spent+G.det.spent; const todo=G.ess.todo+G.non.todo+G.det.todo;
-  const reste=budQ-spent-todo, days=lastDay(m0)-day+1;
-  const ratio=budQ>0?spent/budQ:0, overNow=spent-budQ, overEnd=spent+todo-budQ;
-  const pcOf=v=>budQ>0?Math.round(v/budQ*100):0, sg=v=>(v>0?"+":v<0?"−":"")+Math.abs(v), colE=overEnd>0.5?"var(--coral)":"var(--mint)", colN=overNow>0.5?"var(--coral)":"var(--mint)";
-  const line=(lab,v)=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-top:3px"><span class="muted">${lab}</span><span class="num" style="color:${v>0.5?"var(--coral)":"var(--mint)"}">${v>0?"+":v<0?"−":""}${eur0(Math.abs(v))} · ${sg(pcOf(v))} %</span></div>`;
-  h+=`<section class="card click" data-goto="budget"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><h2 style="margin:0;font-size:16px">Mon budget du mois</h2><div class="muted" style="font-size:12.5px">encore ${days} jour${days>1?"s":""} en ${esc(mn(m0))}</div></div>
-    <div style="text-align:right"><div class="num" style="font-size:28px;font-weight:700;color:${colE}">${sg(pcOf(overEnd))} %</div><div class="muted" style="font-size:12px">${overEnd>0.5?"au-dessus":"sous"} de tes plafonds · fin de mois prévue</div></div></div>
-    <div style="position:relative;height:10px;background:#1A2440;border-radius:9px;margin-top:12px"><i style="position:absolute;left:0;top:0;bottom:0;width:${Math.min(100,ratio*100)}%;background:${colN};border-radius:9px"></i></div>
-    <div style="margin-top:8px">${line("Aujourd'hui",overNow)}${todo>0.5?line("Fin de mois prévue (avec "+eur0(todo)+" à venir)",overEnd):""}</div>
-    <div class="muted num" style="font-size:11.5px;margin-top:6px">${eur0(spent)} dépensés · plafonds ${eur0(budQ)} (hors épargne)${overEnd<=0.5?" · ≈ "+eur0(-overEnd/days)+" par jour à dépenser librement":""}</div></section>`;
+  // 4. budget du mois (une seule ligne)
+  { const B=budBilan(m0); const hc="var(--coral)", bc="#38BDF8";
+    if(B.salaire>0){ const over=B.diff<-0.5, p=Math.abs(B.diff)/B.salaire*100, pr=p>0&&p<1?"moins de 1":String(Math.round(p)), col=over?hc:bc, fill=Math.min(100,(B.spent+B.todo)/B.salaire*100);
+      h+=`<section class="card click" data-goto="budget" data-bm="${m0}"><div class="muted" style="font-size:12.5px">Budget de ${esc(mn(m0))}</div><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px"><b style="font-size:18px;color:${col}">${over?"Déjà dépassé de "+pr+" %":"Il te reste "+pr+" % de marge"}</b><span class="muted" style="font-size:18px">›</span></div>
+      <div style="position:relative;height:10px;background:#1A2440;border-radius:9px;margin-top:12px;overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:${fill}%;background:${col};border-radius:9px"></i></div>
+      <div class="muted" style="font-size:11.5px;margin-top:8px">Revenus du mois − déjà dépensé − à venir</div></section>`; }
+    else h+=`<section class="card click" data-goto="budget" data-bm="${m0}"><div class="muted" style="font-size:12.5px">Budget de ${esc(mn(m0))}</div><b style="font-size:15px">Revenus du mois pas encore connus</b></section>`; }
   // 3. dettes
   const ds=debtState(today);
   if(ds.base>0){ const pc=Math.min(100,ds.pct);
@@ -1289,13 +1285,29 @@ function vPrimes(){
     <button class="btn pri" type="submit">${e?"Enregistrer":"Ajouter la prime"}</button>${e?`<button class="btn" type="button" data-act="prime-cancel">Annuler</button>`:""}
     <p class="muted" style="grid-column:1/-1;font-size:12px;margin:2px 0 0">« Paie de novembre » = le salaire qui tombe à la fin de novembre. Si ta prime arrive avec cette paie, choisis novembre. Elle s'ajoute alors à ton prévisionnel de fin de mois.</p></form></section>`;
 }
+function vPaies(){
+  const R=cRates(), now=nowMk(), M=m=>mLabel(m).split(" ")[0].toLowerCase(), items=[];
+  for(const x of dealLines()){ if(x.paie&&paieRecue(x.paie)) continue; items.push({k:"line",paie:x.paie||"",d:x.d,l:x.l,net:x.brut*R.net,sure:!!x.d.signed}); }
+  for(const c of (S().commissions||[])){ if(c.recu||(c.paie&&paieRecue(c.paie))) continue; items.push({k:c.kind==="prime"?"prime":"comm",paie:c.paie||"",c,net:commNet(c),sure:!!c.sure}); }
+  const by={}; for(const it of items) (by[it.paie]=by[it.paie]||[]).push(it);
+  const keys=Object.keys(by).sort((a,b)=>a===""?1:b===""?-1:a.localeCompare(b));
+  let h=`<section class="card"><div class="ch"><h2>Mes paies à venir</h2><span class="s">commissions + primes</span></div>`;
+  if(!keys.length) h+='<p class="muted" style="font-size:13px">Rien de prévu.</p>';
+  for(const k of keys){ const L=by[k], tot=L.filter(x=>x.sure).reduce((a,x)=>a+x.net,0), prob=L.filter(x=>!x.sure).reduce((a,x)=>a+x.net,0);
+    h+=`<div class="row" style="border:0;padding:12px 0 2px"><div class="t" style="white-space:normal"><b style="font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);white-space:normal">${k?"Paie de "+esc(M(k))+" · budget de "+esc(M(addM(k,1))):"Pas encore de mois choisi"}</b></div><span class="a num" style="color:#38BDF8;font-weight:600">${eur0(tot)}</span></div>${prob>0?`<div class="muted" style="font-size:11.5px;text-align:right;margin:0 0 2px">+ ${eur0(prob)} probable</div>`:""}`;
+    h+=L.map(it=>{
+      if(it.k==="line"){ const l=it.l, d=it.d; return `<div class="row" style="padding:9px 0"><div class="t" style="white-space:normal"><b style="white-space:normal;font-size:14px">${esc(d.name)}${l.what&&l.what!=="Facturation"?" · "+esc(l.what):""} <span class="tag ${d.signed?"okk":"todo"}">${d.signed?"Signé":"À signer"}</span></b><small style="white-space:normal">${l.mk?"facturé en "+esc(M(l.mk)):"à affecter à un mois"}</small></div><span class="a pos" style="text-align:right;white-space:nowrap">${eur0(it.net)}</span><button class="btn sm" style="height:30px;padding:0 9px;font-size:13px" data-act="line-lock" data-d="${d.id}" data-l="${l.id}" aria-label="${l.locked?"Déverrouiller":"Verrouiller"}">${l.locked?"🔒":"🔓"}</button><button class="ibtn" data-act="line-edit" data-d="${d.id}" data-l="${l.id}" aria-label="Modifier">${ICON.edit}</button></div>`; }
+      const c=it.c; return `<div class="row" style="padding:9px 0"><span class="bar4" style="background:var(--amber)"></span><div class="t" style="white-space:normal"><b style="white-space:normal;font-size:14px">${esc(c.label||(it.k==="prime"?"Prime":"Commission"))} <span class="tag ${c.sure?"okk":"todo"}">${it.k==="prime"?"Prime":"Commission"}${c.sure?"":" · probable"}</span></b></div><span class="a pos" style="text-align:right;white-space:nowrap">${eur0(it.net)}</span><button class="ibtn" data-act="${it.k==="prime"?"prime-edit":"comm-edit"}" data-id="${c.id}" aria-label="Modifier">${ICON.edit}</button></div>`; }).join("");
+  }
+  return h+`<p class="muted" style="font-size:12px;margin:10px 0 0">Total de chaque paie = commissions des contrats signés + primes + commissions saisies à la main. Le budget est celui du mois qui suit la paie.</p></section>`;
+}
 function vCommissions(){
   const R=cRates(), D=S().deals||[], now=nowMk(); const st=state;
   const L=dealLines().filter(x=>!x.paie||!paieRecue(x.paie));
   const sum=f=>L.filter(f).reduce((a,x)=>a+x.brut,0);
   const sLock=sum(x=>x.d.signed&&x.l.mk&&x.l.locked), sPrev=sum(x=>x.d.signed&&x.l.mk&&!x.l.locked), sNone=sum(x=>x.d.signed&&!x.l.mk), prob=sum(x=>!x.d.signed);
   const sT=sLock+sPrev+sNone, n=v=>eur0(v*R.net), pct=v=>sT>0?Math.round(v/sT*100):0;
-  let h=vPrimes()+`<section class="card" style="border-color:rgba(94,234,212,.35)"><div class="ch"><h2>Commissions dues</h2><span class="s">contrats signés</span></div>
+  let h=`<section class="card" style="border-color:rgba(94,234,212,.35)"><div class="ch"><h2>Commissions dues</h2><span class="s">contrats signés</span></div>
    <div style="font-size:28px;font-weight:700;color:var(--mint)" class="num">${n(sT)} <small style="font-size:13px;font-weight:400;color:var(--muted)">net estimé</small></div><small class="muted">soit ${eur0(sT)} brut, converti à ${Math.round(R.net*100)} %</small>
    <div style="display:flex;height:10px;border-radius:8px;overflow:hidden;margin:10px 0 8px"><i style="width:${pct(sLock)}%;background:var(--mint)"></i><i style="width:${pct(sPrev)}%;background:var(--amber)"></i><i style="width:${pct(sNone)}%;background:#566"></i></div>
    <div class="row" style="border:0;padding:3px 0"><div class="t"><b style="font-weight:500">🔒 Mois verrouillé</b></div><span class="a">${n(sLock)}</span></div>
@@ -1303,9 +1315,10 @@ function vCommissions(){
    <div class="row" style="border:0;padding:3px 0"><div class="t"><b style="font-weight:500">En attente d'affectation (pas de mois)</b></div><span class="a">${n(sNone)}</span></div>
    <p class="muted" style="font-size:12px;margin:6px 0 0">Signé = commission sûre. Le verrouillage dit seulement si le mois de paie est certain : seules les lignes verrouillées comptent dans le « Prudent » du Prévisionnel.</p></section>
    <section class="card"><div class="ch"><h2>Contrats à signer</h2><span class="s">probable</span></div><div style="font-size:20px;font-weight:700" class="num">+ ${n(prob)} <small style="font-size:12.5px;font-weight:400;color:var(--muted)">net · ${eur0(prob)} brut</small></div></section>`;
+  h+=vPaies()+vPrimes();
   // formulaire nouveau contrat
   const ed=st.dealForm?st.dealForm:null;
-  h+=`<section class="card"><div class="ch"><h2>Contrats</h2><button class="btn sm pri" data-act="deal-new">+ Nouveau contrat</button></div>`;
+  h+=`<section class="card"><div class="ch"><h2>Gérer mes contrats</h2><button class="btn sm pri" data-act="deal-new">+ Nouveau contrat</button></div>`;
   if(st.dealNew) h+=`<form class="form" id="dealForm" autocomplete="off"><div class="fld"><label for="dl-name">Nom du contrat (client)</label><input class="in" id="dl-name" required placeholder="Ex. CH Carcassonne"></div><div class="fld"><label for="dl-sig">Contrat</label><select class="in" id="dl-sig"><option value="1">Signé</option><option value="0">À signer</option></select></div><button class="btn pri" type="submit">Créer</button><button class="btn" type="button" data-act="deal-new">Annuler</button></form>`;
   if(!D.length) h+=`<p class="muted" style="font-size:13px">Aucun contrat. Crée-en un, ou importe ton fichier de contrats ci-dessous.</p>`;
   for(const d of D){
@@ -1335,13 +1348,30 @@ function vBudget(){
   if(seg==="mois") h+=vBudgetMonth(mk); else if(seg==="prev") h+=vNdf()+vPrevision(); else if(seg==="com") h+=vCommissions(); else if(seg==="strat") h+=vStrategie(); else h+=vRecurring(mk);
   return h;
 }
+function budBilan(mk){
+  const netFixe=netFixeNow();
+  const salOps=budgetOps(mk).filter(o=>o.cat==="rev"&&/Salaire|Acompte|Primes/.test(o.sub||""));
+  const salaire=salOps.length?salOps.reduce((a,o)=>a+o.amt,0):netFixe+commsOf(addM(mk,-1),false);
+  const G=planGroups(mk), spent=G.ess.spent+G.non.spent+G.det.spent, todo=G.ess.todo+G.non.todo+G.det.todo;
+  return {G,salaire,est:!salOps.length,spent,todo,diff:salaire-spent-todo};
+}
 function vBudgetMonth(mk){
   const plan=fixedPlan(mk,true), netFixe=netFixeNow();
   const salOps=budgetOps(mk).filter(o=>o.cat==="rev"&&/Salaire|Acompte|Primes/.test(o.sub||""));
   const salaire=salOps.length?salOps.reduce((a,o)=>a+o.amt,0):netFixe+commsOf(addM(mk,-1),false);
   const G=planGroups(mk), tg=Object.assign({ess:50,non:30,det:20,epa:0},S().prefs.targets||{});
   const marge=salaire-G.total, reel=salaire-(G.ess.spent+G.non.spent+G.det.spent); const pc=v=>salaire>0?Math.round(v/salaire*100):0;
-  let h=`<section class="kpis">
+  const BB=budBilan(mk), tot=BB.spent+BB.todo, over=BB.diff<-0.5, pOv=salaire>0?Math.abs(BB.diff)/salaire*100:0, prOv=pOv>0&&pOv<1?"moins de 1":String(Math.round(pOv)), colB=over?"var(--coral)":"#38BDF8";
+  let h=`<section class="card"><div class="row"><div class="t"><b style="font-weight:400" class="muted">Déjà payé</b></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(BB.spent)}</span></div>
+   <div class="row"><div class="t"><b style="font-weight:400" class="muted">Encore à venir</b><small style="white-space:normal;overflow:visible;text-overflow:clip">prévu ce mois-ci, mais pas encore parti de ton compte</small></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(BB.todo)}</span></div>
+   <div class="row" style="border-top:1px solid var(--line)"><div class="t"><b>Total du mois</b></div><span class="a num" style="font-size:18px;font-weight:700;color:${over?"var(--coral)":"inherit"}">${eur0(tot)}</span></div>
+   <div class="row"><div class="t"><b style="font-weight:400" class="muted">Tes revenus</b><small>${BB.est?"estimés : net fixe + commissions sûres":"paie reçue, commissions comprises"}</small></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(salaire)}</span></div>
+   <div class="row" style="border-top:1px solid var(--line)"><div class="t"><b style="color:${colB}">${over?"Dépassé de "+prOv+" %":"Marge de "+prOv+" %"}</b></div><span class="a num" style="font-size:20px;font-weight:700;color:${colB}">${eur0(Math.abs(BB.diff))}</span></div>
+   <div style="position:relative;height:10px;background:#1A2440;border-radius:9px;margin-top:6px;overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:${salaire>0?Math.min(100,tot/salaire*100):0}%;background:${colB};border-radius:9px"></i></div>
+   ${BB.todo>0.5?`<div style="background:rgba(255,255,255,.04);border-radius:14px;padding:10px 12px;margin-top:12px"><div class="muted" style="font-size:12px;margin-bottom:4px">Les ${eur0(BB.todo)} à venir, bloc par bloc</div>${[["Essentiel",G.ess.todo],["Non essentiel",G.non.todo],["Dettes (crédits)",G.det.todo]].map(([l,v])=>`<div class="row" style="padding:3px 0"><span class="muted" style="font-size:13px">${l}</span><span class="num" style="font-size:13px">${eur0(v)}</span></div>`).join("")}</div>`:""}
+   <div class="row" style="border-top:1px solid var(--line);margin-top:12px"><div class="t"><b style="font-weight:400" class="muted">Plafonds utilisés</b><small>${eur0(BB.spent)} sur ${eur0(G.total)}</small></div><span class="a num" style="font-size:18px;font-weight:700;color:#38BDF8">${G.total>0?Math.round(BB.spent/G.total*100):0} %</span></div>
+   <p class="muted" style="font-size:12px;margin:6px 0 0">${marge<0?"Tes plafonds ("+eur0(G.total)+") dépassent tes revenus ("+eur0(salaire)+") de "+eur0(-marge)+".":"Tes plafonds ("+eur0(G.total)+") tiennent dans tes revenus ("+eur0(salaire)+")."}</p></section>`;
+  h+=`<section class="kpis">
    <div class="kpi"><small>Revenus pour ${esc(mLabel(mk).split(" ")[0].toLowerCase())}</small><b class="pos">${eur0(salaire)}</b><span>${salOps.length?"paie reçue, commissions comprises":"estimé : net fixe + commissions sûres"}</span></div>
    <div class="kpi"><small>Total de mes plafonds</small><b>${eur0(G.total)}</b><span>charges fixes comprises${G.epa.plaf?" · dont "+eur0(G.epa.plaf)+" d'épargne":""}</span></div>
    <div class="kpi"><small>Déjà dépensé</small><b>${eur0(G.ess.spent+G.non.spent+G.det.spent)}</b><span>essentiel + non essentiel + dettes</span></div>
@@ -2179,7 +2209,7 @@ function setMonthOps(mk,list){ state.months[mk]=list; Store.saveMonth(mk); }
 function saveSettings(){ Store.saveSettings(); }
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-act],[data-goto],[data-seg],[data-pseg],[data-optab]"); if(!t) return; if(t.tagName==="A") e.preventDefault();
-  if(t.dataset.goto){ go(t.dataset.goto); return; }
+  if(t.dataset.goto){ if(t.dataset.bm){ state.month=t.dataset.bm; state.budSeg="mois"; } go(t.dataset.goto); return; }
   if(t.dataset.optab){ state.opsTab=t.dataset.optab; state.editId=null; render(); window.scrollTo({top:0}); return; }
   if(t.dataset.seg){ state.budSeg=t.dataset.seg; render(); return; }
   if(t.dataset.pseg){ state.patSeg=t.dataset.pseg; state.editAcc=null; render(); return; }
@@ -2240,7 +2270,7 @@ document.addEventListener("click",e=>{
     case "deal-sign": { const d=(S().deals||[]).find(x=>x.id===t.dataset.id); if(d){ d.signed=!d.signed; saveSettings(); render(); } break; }
     case "deal-del": S().deals=(S().deals||[]).filter(x=>x.id!==t.dataset.id); state.confirm=null; saveSettings(); render(); toast("Contrat supprimé"); break;
     case "line-add": state.addLine=t.dataset.d; state.editLine=null; render(); break;
-    case "line-edit": state.editLine={d:t.dataset.d,l:t.dataset.l}; state.addLine=null; render(); break;
+    case "line-edit": state.editLine={d:t.dataset.d,l:t.dataset.l}; state.addLine=null; state.dealOpen=Object.assign({},state.dealOpen,{[t.dataset.d]:true}); render(); setTimeout(()=>{ const f=$("#lineForm"); if(f) f.scrollIntoView({block:"center"}); },50); break;
     case "line-cancel": state.addLine=null; state.editLine=null; render(); break;
     case "line-lock": { const d=(S().deals||[]).find(x=>x.id===t.dataset.d), l=d&&(d.lines||[]).find(x=>x.id===t.dataset.l); if(l){ l.locked=!l.locked; saveSettings(); render(); toast(l.locked?"Mois verrouillé":"Mois déverrouillé"); } break; }
     case "line-del": { const d=(S().deals||[]).find(x=>x.id===t.dataset.d); if(d){ d.lines=(d.lines||[]).filter(x=>x.id!==t.dataset.l); saveSettings(); render(); toast("Ligne supprimée"); } break; }
