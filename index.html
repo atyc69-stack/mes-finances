@@ -744,16 +744,20 @@ function vHome(){
   const rw=(l,sub,v)=>`<div class="row" style="padding:6px 0"><div class="t"><b style="font-weight:400;font-size:13px">${esc(l)}</b>${sub?`<small>${esc(sub)}</small>`:""}</div><span class="a num" style="font-size:13px">${sgn(v)}</span></div>`;
   const sh=(t,v)=>`<div class="row" style="padding:8px 0 4px;border:0"><div class="t"><b style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${t}</b></div><span class="a num" style="font-size:12.5px;color:var(--muted)">${sgn(v)}</span></div>`;
   const sNC=r2(oth.reduce((a,x)=>a+x.amt,0)+cre.reduce((a,x)=>a+x.amt,0)), sCard=r2(pendCard.reduce((a,x)=>a+x.amt,0)+cardPart);
+  const CG="#4ADE80", CR="var(--coral)", CB="#38BDF8", cl=(v,p)=>v>=0?p:CR;
   h+=`<section class="card">
-   <div class="muted" style="font-size:12.5px">Solde aujourd'hui</div><div class="num" style="font-size:clamp(22px,6.5vw,30px);white-space:nowrap">${bal==null?"—":sgn(bal)}</div>
-   <details class="more" style="margin-top:10px"><summary style="font-size:13.5px;color:var(--ink)">Reste à débiter d'ici la fin ${esc(mn(m0))} : <b class="num">${sgn(resteTot)}</b> <span class="muted" style="font-size:12px">(voir le détail)</span></summary>
+   <div class="muted" style="font-size:12.5px">Solde aujourd'hui</div><div class="num" style="font-size:clamp(24px,7vw,32px);white-space:nowrap;color:${bal==null?"var(--ink)":cl(bal,CG)}">${bal==null?"—":sgn(bal)}</div>
+   <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+    <span class="pill" style="padding:6px 12px;border-radius:99px;font-size:13px;background:rgba(255,255,255,.06);color:var(--muted)">Fin ${esc(mn(m0))} <b class="num" style="font-size:15px;font-weight:600;margin-left:4px;color:${cl(prevision,CB)}">${sgn(prevision,eur0)}</b></span>
+    ${payTot>0?`<span class="pill" style="padding:6px 12px;border-radius:99px;font-size:13px;background:rgba(255,255,255,.06);color:var(--muted)">Début ${esc(mn(addM(m0,1)))} <b class="num" style="font-size:15px;font-weight:600;margin-left:4px;color:${cl(apresPaie,CG)}">${sgn(apresPaie,eur0)}</b></span>`:""}</div>
+   <details class="more" style="margin-top:10px"><summary style="font-size:12.5px">Voir tout ce qui reste à débiter, et comment c'est calculé</summary>
+    ${sh("Solde aujourd'hui",bal||0)}
     ${sh("Prélèvements, loyer, crédits",sNC)}${oth.map(x=>rw(x.r.label,"le "+dl(x),x.amt)).join("")}${cre.length?rw("Mensualités de crédits ("+cre.length+")","le "+dl(cre[0]),cre.reduce((a,x)=>a+x.amt,0)):""}
     ${sh("Carte bancaire, débitée fin "+mn(m0),sCard)}${settled?"":rw("Achats déjà faits ("+c1.n+")","du "+Number(c1.from.slice(8))+"/"+c1.from.slice(5,7)+" au "+Number(c1.to.slice(8))+"/"+c1.to.slice(5,7),cardPart)}${pendCard.map(x=>rw(x.r.label,"abonnement, le "+Number(x.date.slice(8))+" "+mn(x.date.slice(0,7)),x.amt)).join("")}
+    <div class="row" style="padding:8px 0 4px"><div class="t"><b style="font-size:13px">Reste à débiter</b></div><span class="a num" style="font-size:13px">${sgn(resteTot)}</span></div>
+    <div class="row" style="padding:4px 0"><div class="t"><b style="font-size:13px">Fin ${esc(mn(m0))}, avant ta paie</b></div><span class="a num" style="font-size:13px;color:${cl(prevision,CB)}">${sgn(prevision)}</span></div>
+    ${payTot>0?`<div class="row" style="padding:4px 0"><div class="t"><b style="font-weight:400;font-size:13px">Ta paie du ${Number(sal.date.slice(8))} ${esc(mn(m0))} (pour ${esc(mn(addM(m0,1)))})</b></div><span class="a num" style="font-size:13px">${sgn(payTot)}</span></div><div class="row" style="padding:4px 0;border:0"><div class="t"><b style="font-size:13px">Début ${esc(mn(addM(m0,1)))}</b></div><span class="a num" style="font-size:13px;color:${cl(apresPaie,CG)}">${sgn(apresPaie)}</span></div>`:""}
    </details>
-   <div style="border-top:1px solid var(--line);margin:12px 0 0;padding-top:10px;display:grid;gap:6px">
-    <div class="row" style="padding:0;border:0"><div class="t"><small style="font-size:13px">Fin ${esc(mn(m0))}, avant ta paie</small></div><span class="a num" style="font-size:15px;font-weight:500;color:var(--ink)">${sgn(prevision)}</span></div>
-    ${payTot>0?`<div class="row" style="padding:0;border:0"><div class="t"><small style="font-size:13px">Début ${esc(mn(addM(m0,1)))}, avec ta paie du ${Number(sal.date.slice(8))} (${sgn(payTot,eur0)})</small></div><span class="a num" style="font-size:15px;font-weight:500;color:${apresPaie>=0?"var(--mint)":"var(--ink)"}">${sgn(apresPaie)}</span></div>`:""}
-   </div>
   </section>`;
   // 2. victoire
   const v=victory();
