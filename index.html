@@ -441,6 +441,7 @@ function cardCycle(mk){ // achats carte débités à la fin du mois mk (du 20 du
   const bank=((S().prefs||{}).cardBank||{})[mk];
   return {calc:Math.round(v*100)/100, bank:(bank==null?null:Number(bank)), val:(bank==null?Math.round(v*100)/100:Number(bank)), n, from, to};
 }
+function cardRecWin(md){ const from=addM(md,-1)+"-20", to=md+"-19", out=[]; for(const m of [addM(md,-1),md]) for(const x of recStatus(m)) if(!x.paid&&x.r.card&&x.amt<0&&x.date>=from&&x.date<=to) out.push(x); return out; }
 function cardSettled(mk){ return opsOf(mk).some(o=>o.sub==="Règlement carte"&&Number(o.d.slice(8))>=24); }
 const GROUPS={ess:"Essentiel",non:"Non essentiel",det:"Dettes",epa:"Épargne & investissement"};
 const GCOL={ess:"#7CA8FF",non:"#FFB86B",det:"#FF7A6B",epa:"#5EEAD4"};
@@ -527,8 +528,8 @@ function projection(n,withProbable){
 }
 // ---- point bas du mois : prélèvements hors carte avant la paie
 function lowPoint(mk,start){
-  const today=todayISO(); let v=start, min=start, minD=null; const ev=[], late=[]; let cardRec=0;
-  for(const x of recStatus(mk)){ if(!x.paid&&x.amt<0&&x.r.card) cardRec+=x.amt; if(x.paid||x.amt>=0||x.r.card) continue; if(mk===nowMk()&&x.date<today) continue; const d=Number(x.date.slice(8)); if(d>=lastDay(mk)-1){ late.push({d:x.date,a:x.amt,l:x.r.label}); continue; } ev.push({d:x.date,a:x.amt,l:x.r.label}); }
+  const today=todayISO(); let v=start, min=start, minD=null; const ev=[], late=[]; let cardRec=cardRecWin(mk).reduce((a,x)=>a+x.amt,0);
+  for(const x of recStatus(mk)){ if(x.paid||x.amt>=0||x.r.card) continue; if(mk===nowMk()&&x.date<today) continue; const d=Number(x.date.slice(8)); if(d>=lastDay(mk)-1){ late.push({d:x.date,a:x.amt,l:x.r.label}); continue; } ev.push({d:x.date,a:x.amt,l:x.r.label}); }
   ev.sort((a,b)=>a.d.localeCompare(b.d)); for(const e of ev){ v+=e.a; e.v=r2(v); if(v<min){ min=v; minD=e.d; } }
   return {min,date:minD,ev,late,start,cardRec:r2(cardRec)};
 }
@@ -732,7 +733,7 @@ function vHome(){
   const incExtra=payPending?r2(commsOf(m0,false)+ndfDue(m0,true)):0;
   const payTot=r2(incPlan+incExtra);
   const cardPart=settled?0:c1.val;
-  const pendNC=pend.filter(x=>!x.r.card), pendCard=pend.filter(x=>x.r.card);
+  const pendNC=pend.filter(x=>!x.r.card), pendCard=settled?[]:cardRecWin(m0);
   const resteTot=r2(pendNC.reduce((a,x)=>a+x.amt,0)+pendCard.reduce((a,x)=>a+x.amt,0)+cardPart);
   const prevision=r2((bal||0)+resteTot), apresPaie=r2(prevision+payTot);
   let h=banner();
@@ -747,10 +748,12 @@ function vHome(){
    <div class="muted" style="font-size:12.5px">Solde aujourd'hui</div><div class="num" style="font-size:clamp(22px,6.5vw,30px);white-space:nowrap">${bal==null?"—":sgn(bal)}</div>
    <details class="more" style="margin-top:10px"><summary style="font-size:13.5px;color:var(--ink)">Reste à débiter d'ici la fin ${esc(mn(m0))} : <b class="num">${sgn(resteTot)}</b> <span class="muted" style="font-size:12px">(voir le détail)</span></summary>
     ${sh("Prélèvements, loyer, crédits",sNC)}${oth.map(x=>rw(x.r.label,"le "+dl(x),x.amt)).join("")}${cre.length?rw("Mensualités de crédits ("+cre.length+")","le "+dl(cre[0]),cre.reduce((a,x)=>a+x.amt,0)):""}
-    ${sh("Carte bancaire, débitée fin "+mn(m0),sCard)}${settled?"":rw("Achats déjà faits ("+c1.n+")","du "+Number(c1.from.slice(8))+"/"+c1.from.slice(5,7)+" au "+Number(c1.to.slice(8))+"/"+c1.to.slice(5,7),cardPart)}${pendCard.map(x=>rw(x.r.label,"abonnement, le "+dl(x),x.amt)).join("")}
+    ${sh("Carte bancaire, débitée fin "+mn(m0),sCard)}${settled?"":rw("Achats déjà faits ("+c1.n+")","du "+Number(c1.from.slice(8))+"/"+c1.from.slice(5,7)+" au "+Number(c1.to.slice(8))+"/"+c1.to.slice(5,7),cardPart)}${pendCard.map(x=>rw(x.r.label,"abonnement, le "+Number(x.date.slice(8))+" "+mn(x.date.slice(0,7)),x.amt)).join("")}
    </details>
-   <div style="border-top:1px solid var(--line);margin:12px 0 0;padding-top:12px"><div class="muted" style="font-size:12.5px">Fin ${esc(mn(m0))}, avant ta paie du mois</div><div class="num" style="font-size:clamp(26px,8vw,36px);white-space:nowrap;color:${colF}">${sgn(prevision)}</div></div>
-   ${payTot>0?`<p class="muted" style="font-size:12.5px;margin:8px 0 0">Ta paie du ${Number(sal.date.slice(8))} ${esc(mn(m0))} (${sgn(payTot,eur0)}) sert pour le mois suivant : tu démarres ${esc(mn(addM(m0,1)))} à <b class="num" style="color:var(--ink)">${sgn(apresPaie)}</b>.</p>`:""}
+   <div style="border-top:1px solid var(--line);margin:12px 0 0;padding-top:10px;display:grid;gap:6px">
+    <div class="row" style="padding:0;border:0"><div class="t"><small style="font-size:13px">Fin ${esc(mn(m0))}, avant ta paie</small></div><span class="a num" style="font-size:15px;font-weight:500;color:var(--ink)">${sgn(prevision)}</span></div>
+    ${payTot>0?`<div class="row" style="padding:0;border:0"><div class="t"><small style="font-size:13px">Début ${esc(mn(addM(m0,1)))}, avec ta paie du ${Number(sal.date.slice(8))} (${sgn(payTot,eur0)})</small></div><span class="a num" style="font-size:15px;font-weight:500;color:${apresPaie>=0?"var(--mint)":"var(--ink)"}">${sgn(apresPaie)}</span></div>`:""}
+   </div>
   </section>`;
   // 2. victoire
   const v=victory();
