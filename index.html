@@ -2117,8 +2117,8 @@ function vAccounts(){
    <div class="kpi"><small>Patrimoine net</small><b class="${epa-totCrd<0?"neg":"pos"}">${sgn(epa-totCrd,eur0)}</b><span>épargne − crédits</span></div></section>`;
   const ea=state.editAcc?accs.find(a=>a.id===state.editAcc):null;
   h+=`<section class="card"><div class="ch"><h2>Comptes</h2><span class="s">mets à jour les soldes de temps en temps</span></div>
-   ${accs.map((a,ai)=>{ const b=accBalance(a); return ea&&ea.id===a.id?`<form class="form" id="accForm" data-id="${a.id}" style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="fld"><label for="a-name">Nom</label><input class="in" id="a-name" value="${esc(a.name)}"></div><div class="fld"><label for="a-bank">Banque</label><input class="in" id="a-bank" value="${esc(a.bank)}"></div><div class="fld"><label for="a-bal">Solde réel (€)</label><input class="in num" id="a-bal" inputmode="decimal" value="${a.balance==null?"":String(a.balance).replace(".",",")}"></div><div class="fld"><label for="a-date">À la date du</label><input class="in" type="date" id="a-date" value="${a.balanceDate||todayISO()}"></div><button class="btn pri" type="submit">Enregistrer</button><button class="btn" type="button" data-act="cancel-acc">Annuler</button></form>`:
-     `<div class="row"><span class="bar4" style="background:${a.type==="courant"?"#FF5C6C":a.type==="livret"?"#5EEAD4":"#A78BFA"}"></span><div class="t"><b>${esc(a.name)}</b><small>${esc(a.bank)} · ${a.type==="courant"?"compte courant":a.type==="livret"?"livret":"placement"}${a.balanceDate?" · solde au "+esc(dFr(a.balanceDate)):""}</small></div><span class="a ${b<0?"neg":""}">${b==null?"à renseigner":eur(b)}</span><button class="ibtn" data-act="acc-up" data-id="${a.id}" aria-label="Monter" ${ai===0?"disabled style=\"opacity:.25\"":""}>▲</button><button class="ibtn" data-act="acc-down" data-id="${a.id}" aria-label="Descendre" ${ai===accs.length-1?"disabled style=\"opacity:.25\"":""}>▼</button><button class="ibtn" data-act="edit-acc" data-id="${a.id}" aria-label="Modifier">${ICON.edit}</button></div>${fondsCtl(a)}`; }).join("")}
+   ${accs.map((a,ai)=>{ const b=accBalance(a); return ea&&ea.id===a.id?`<form class="form" id="accForm" data-id="${a.id}" style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="fld"><label for="a-name">Nom</label><input class="in" id="a-name" value="${esc(a.name)}"></div><div class="fld"><label for="a-bank">Banque</label><input class="in" id="a-bank" value="${esc(a.bank)}"></div><div class="fld"><label for="a-bal">Solde réel (€)</label><input class="in num" id="a-bal" inputmode="decimal" value="${a.balance==null?"":String(a.balance).replace(".",",")}"></div><div class="fld"><label for="a-date">À la date du</label><input class="in" type="date" id="a-date" value="${todayISO()}"><small class="muted" style="display:block;margin-top:4px;color:#38BDF8">La date est celle d'aujourd'hui. Mets la date de ton relevé si ce n'est pas aujourd'hui : l'appli ajoute ensuite les opérations faites après cette date.</small></div><button class="btn pri" type="submit">Enregistrer</button><button class="btn" type="button" data-act="cancel-acc">Annuler</button></form>`:
+     `<div class="row"><span class="bar4" style="background:${a.type==="courant"?"#FF5C6C":a.type==="livret"?"#5EEAD4":"#A78BFA"}"></span><div class="t"><b>${esc(a.name)}</b><small>${esc(a.bank)} · ${a.type==="courant"?"compte courant":a.type==="livret"?"livret":"placement"}${a.balanceDate?(a.type==="courant"?" · solde réel du "+esc(dFr(a.balanceDate))+", à jour d'aujourd'hui":" · solde saisi le "+esc(dFr(a.balanceDate))):""}</small></div><span class="a ${b<0?"neg":""}">${b==null?"à renseigner":eur(b)}</span><button class="ibtn" data-act="acc-up" data-id="${a.id}" aria-label="Monter" ${ai===0?"disabled style=\"opacity:.25\"":""}>▲</button><button class="ibtn" data-act="acc-down" data-id="${a.id}" aria-label="Descendre" ${ai===accs.length-1?"disabled style=\"opacity:.25\"":""}>▼</button><button class="ibtn" data-act="edit-acc" data-id="${a.id}" aria-label="Modifier">${ICON.edit}</button></div>${fondsCtl(a)}`; }).join("")}
    <div class="toolbar" style="margin-top:10px"><button class="btn sm" data-act="add-acc">Ajouter un compte</button></div></section>`;
   const ec=state.editCredit?cr.find(c=>c.id===state.editCredit):null;
   const groups={}; cr.forEach(c=>{ const g=c.name.split(" – ")[0]; (groups[g]=groups[g]||[]).push(c); });
@@ -2171,10 +2171,12 @@ function vSettings(){
    ${(()=>{ const tg=Object.assign({ess:50,non:30,det:20,epa:0},p.targets||{}); return ["ess","non","det","epa"].map(k=>`<div class="fld"><label for="p-t-${k}">Cible ${GROUPS[k]} (%)</label><input class="in num" id="p-t-${k}" inputmode="decimal" value="${tg[k]}"></div>`).join(""); })()}
    <button class="btn pri" type="submit">Enregistrer</button></form></section>`;
   h+=vCatManager();
-  h+=`<section class="card"><div class="ch"><h2>Importer des relevés</h2><span class="s">CSV Crédit Mutuel (compte ou carte) ou Trade Republic</span></div>
+  h+=`<section class="card"><div class="ch"><h2>Importer des relevés</h2><span class="s">CSV Crédit Mutuel (compte ou carte), CSV ou PDF Trade Republic</span></div>
    <p class="muted" style="margin:0 0 10px;font-size:13px">Les opérations déjà présentes sont ignorées. Elles sont rangées automatiquement ; tu pourras corriger la catégorie ensuite.</p>
-   <input type="file" id="csvFile" accept=".csv,text/csv" class="in" style="padding:8px">
-   ${state.importPreview?`<div class="banner" style="margin-top:10px"><div class="grow"><b>${state.importPreview.ops.length} nouvelle${state.importPreview.ops.length>1?"s":""} opération${state.importPreview.ops.length>1?"s":""}</b> trouvée${state.importPreview.ops.length>1?"s":""} (${state.importPreview.skipped} déjà présente${state.importPreview.skipped>1?"s":""}) · ${esc(state.importPreview.source)}${state.importPreview.balance!=null?" · solde relevé "+eur(state.importPreview.balance):""}</div><button class="btn sm pri" data-act="import-csv">Importer</button><button class="btn sm" data-act="cancel-import">Annuler</button></div>`:""}
+   <input type="file" id="csvFile" accept=".csv,text/csv,.pdf,application/pdf" class="in" style="padding:8px">
+   ${state.importPreview?`<div class="banner" style="margin-top:10px"><div class="grow"><b>${state.importPreview.ops.length} nouvelle${state.importPreview.ops.length>1?"s":""} opération${state.importPreview.ops.length>1?"s":""}</b> trouvée${state.importPreview.ops.length>1?"s":""} (${state.importPreview.skipped} déjà présente${state.importPreview.skipped>1?"s":""}) · ${esc(state.importPreview.source)}${state.importPreview.balance!=null?" · solde relevé "+eur(state.importPreview.balance):""}
+     ${state.importPreview.ops.length?`<details class="more" style="margin-top:6px"><summary style="font-size:12.5px;color:#38BDF8">Voir les ${state.importPreview.ops.length} opération${state.importPreview.ops.length>1?"s":""}</summary>${state.importPreview.ops.slice().sort((a,b)=>a.d.localeCompare(b.d)).map(o=>`<div class="row" style="padding:5px 0"><div class="t" style="white-space:normal"><b style="font-weight:400;font-size:12.5px;white-space:normal">${esc(o.label)}</b><small style="white-space:normal">${esc(dFr(o.d).slice(0,5))} · ${esc(o.sub||"")}${o.replaceNote?" · remplace la ligne du mois ("+esc(o.replaceNote)+")":""}</small></div><span class="a num" style="font-size:12.5px;${o.amt<0?"":"color:var(--mint)"}">${sgn(o.amt)}</span></div>`).join("")}</details>`:""}</div><button class="btn sm pri" data-act="import-csv">Importer</button><button class="btn sm" data-act="cancel-import">Annuler</button></div>`:""}
+   ${state.pdfBal?`<div class="banner" style="margin-top:10px"><div class="grow"><b>Relevé Trade Republic du ${esc(dFr(state.pdfBal.from))} au ${esc(dFr(state.pdfBal.to))}</b>${state.pdfBal.courant!=null?`<div style="font-size:13px;margin-top:4px">Compte courant, solde fin de période : <b class="num">${eur(state.pdfBal.courant)}</b></div>`:""}${state.pdfBal.pea!=null?`<div style="font-size:13px">Compte PEA, solde fin de période : <b class="num">${eur(state.pdfBal.pea)}</b></div>`:""}${state.pdfBal.courant!=null?`<div style="font-size:12.5px;margin-top:6px;color:#38BDF8">Mettre à jour « ${esc((S().accounts.find(a=>a.id==="tr")||{}).name||"Compte espèces")} » avec ${eur(state.pdfBal.courant)} au ${esc(dFr(state.pdfBal.to))} ?</div>`:""}<div class="muted" style="font-size:12px;margin-top:6px">Les opérations viennent du fichier CSV. Le PDF sert à lire ton vrai solde et sa date.</div></div>${state.pdfBal.courant!=null?`<button class="btn sm pri" data-act="pdf-apply">Mettre à jour</button>`:""}<button class="btn sm" data-act="pdf-cancel">Annuler</button></div>`:""}
   </section>`;
   h+=`<section class="card"><div class="ch"><h2>Compléter mes bulletins</h2><span class="s">fichier gardé chez toi, jamais en ligne</span></div>
    <p class="muted" style="margin:0 0 10px;font-size:13px">Pour séparer tes commissions (« prime sur objectif ») des autres primes sur les anciens bulletins. À faire une seule fois avec le fichier <b>bulletins_complement.json</b>.</p>
@@ -2354,6 +2356,8 @@ document.addEventListener("click",e=>{
     case "line-nomonth": { const d=(S().deals||[]).find(x=>x.id===t.dataset.d), l=d&&(d.lines||[]).find(x=>x.id===t.dataset.l); if(l){ const old=l.mk||""; l.mk=""; l.locked=false; for(const it of (d.devis||[])) if((it.mk||"")===old) it.mk=""; saveSettings(); render(); toast("Mois retiré : la ligne attend une affectation"); } break; }
     case "dv-clear": { const it=state.dv.items.find(x=>x.id===t.dataset.id); if(it){ it.mk=""; render(); } break; }
     case "dv-clear-l": { state.dv.lmk=state.dv.lmk||{}; state.dv.lmk[t.dataset.id]=""; render(); break; }
+    case "pdf-apply": { const p=state.pdfBal, a=S().accounts.find(x=>x.id==="tr"); if(!p||p.courant==null) break; if(!a){ toast("Compte « Compte espèces » introuvable"); break; } a.balance=p.courant; a.balanceDate=p.to; saveSettings(); state.pdfBal=null; render(); toast(a.name+" : "+eur(p.courant)+" au "+dFr(p.to)); break; }
+    case "pdf-cancel": state.pdfBal=null; render(); break;
     case "dv-new": state.dv=dvNew(); state.dvPick=null; render(); setTimeout(()=>{ const c=$("#dvCard"); if(c) c.scrollIntoView({block:"start"}); },50); break;
     case "dv-open": { const v=dvOpen(t.dataset.d); if(v){ state.dv=v; state.dvPick=null; render(); setTimeout(()=>{ const c=$("#dvCard"); if(c) c.scrollIntoView({block:"start"}); },50); } break; }
     case "dv-detail": state.dv.detail=true; render(); break;
@@ -2489,7 +2493,7 @@ document.addEventListener("change",e=>{
   if(el.dataset.stweek){ const st=S().prefs.stella=S().prefs.stella||{weeks:{},days:{}}; st.weeks=st.weeks||{}; st.weeks[el.dataset.stweek]=el.value; saveSettings(); render(); return; }
   if(el.dataset.stday){ const st=S().prefs.stella=S().prefs.stella||{weeks:{},days:{}}; st.days=st.days||{}; const v=Math.max(0,Math.min(2,parseInt(el.value)||0)); const k=el.dataset.stday; const save=st.days[k]; delete st.days[k]; if(stellaMealsOn(k)!==v) st.days[k]=v; else if(save!=null&&save!==v) {} saveSettings(); render(); return; }
   if(el.dataset.budget){ const k=el.dataset.budget; const raw=el.value.trim(); if(raw===""){ delete S().budgets[k]; } else { const v=parseAmt(raw); if(!isFinite(v)||v<0){ toast("Montant invalide"); render(); return; } S().budgets[k]=v; } saveSettings(); render(); toast("Plafond enregistré"); }
-  if(el.id==="csvFile"&&el.files[0]) readCSV(el.files[0]);
+  if(el.id==="csvFile"&&el.files[0]){ const fl=el.files[0]; if(/\.pdf$/i.test(fl.name)||fl.type==="application/pdf") readTRPdf(fl); else readCSV(fl); }
   if(el.id==="dealFile"&&el.files[0]){ const r=new FileReader(); r.onload=()=>{ try{ const d=JSON.parse(r.result); const arr=Array.isArray(d)?d:d.deals; if(!Array.isArray(arr)) throw 0; const cur=S().deals||[]; let n=0; for(const x of arr){ if(!x.id||!x.name) continue; const i=cur.findIndex(y=>y.id===x.id); if(i>=0) cur[i]=x; else cur.push(x); n++; } S().deals=cur; saveSettings(); render(); toast(n+" contrat"+(n>1?"s":"")+" importé"+(n>1?"s":"")); }catch(e){ toast("Fichier non reconnu"); } }; r.readAsText(el.files[0]); el.value=""; return; }
   if(el.id==="psFile"&&el.files[0]){ const r=new FileReader(); r.onload=()=>{ try{ const d=JSON.parse(r.result); let n=0,sk=0; const P=S().payslips||{}; for(const [mk,v] of Object.entries(d)){ if(!P[mk]){ sk++; continue; } for(const f of ["comm","prime","primeLabel"]) if(v[f]!==undefined) P[mk][f]=v[f]; n++; } saveSettings(); render(); toast(n+" bulletin"+(n>1?"s":"")+" complété"+(n>1?"s":"")+(sk?" ("+sk+" ignoré"+(sk>1?"s":"")+", bulletin absent)":"")); }catch(e){ toast("Ce fichier n'est pas valide"); } }; r.readAsText(el.files[0],"utf-8"); el.value=""; }
   if(el.id==="recoFile"&&el.files[0]){ const f=el.files[0]; readCSV(f).then(()=>{ if(state.importPreview&&!state.importPreview.card){ state.importPreview=null; render(); toast("Ce fichier n'est pas un relevé de carte"); } }); el.value=""; return; }
@@ -2538,7 +2542,7 @@ document.addEventListener("submit",e=>{
     const bl=$("#r-block").value; if(bl) r.block=bl; else delete r.block;
     S().recurring=[...S().recurring.filter(x=>x.id!==r.id),r]; saveSettings(); state.editRec=null; state.recNew=false; render(); toast("Récurrence enregistrée");
   }
-  if(f.id==="accForm"){ const a=S().accounts.find(x=>x.id===f.dataset.id); a.name=$("#a-name").value.trim()||a.name; a.bank=$("#a-bank").value.trim(); const b=$("#a-bal").value.trim(); a.balance=b===""?null:parseAmt(b); a.balanceDate=$("#a-date").value||todayISO(); saveSettings(); state.editAcc=null; render(); toast("Compte mis à jour"); }
+  if(f.id==="accForm"){ const a=S().accounts.find(x=>x.id===f.dataset.id); a.name=$("#a-name").value.trim()||a.name; a.bank=$("#a-bank").value.trim(); const b=$("#a-bal").value.trim(), oldB=a.balance, oldD=a.balanceDate; a.balance=b===""?null:parseAmt(b); const dv=$("#a-date").value||todayISO(), same=(oldB==null&&a.balance==null)||(oldB!=null&&a.balance===Number(oldB)); a.balanceDate=(same&&dv===todayISO()&&oldD)?oldD:dv; saveSettings(); state.editAcc=null; render(); toast("Compte mis à jour"); }
   if(f.id==="crForm"){ const c=S().credits.find(x=>x.id===f.dataset.id); const today=todayISO(); const old=crdAt(c,today);
     c.name=$("#c-name").value.trim()||c.name; c.mens=parseAmt($("#c-mens").value)||c.mens;
     const rt=$("#c-rate").value.trim(); const nr=rt===""?null:parseAmt(rt); if(nr!==c.rate){ c.rate=nr; c.rateEst=false; }
@@ -2662,6 +2666,19 @@ function splitCSV(line,sep){ const out=[]; let cur="",q=false; for(let i=0;i<lin
 const nAmt=s=>{ s=(s||"").trim().replace(/\s/g,"").replace(",","."); return s?parseFloat(s):0; };
 const dFR=s=>{ if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); const [a,b,c]=s.split("/"); return c+"-"+b+"-"+a; };
 const keyOf=o=>o.d+"|"+o.amt.toFixed(2)+"|"+o.label.toUpperCase().replace(/\s+/g," ").slice(0,24);
+const FR_MOIS={"janv":1,"févr":2,"fevr":2,"mars":3,"avr":4,"mai":5,"juin":6,"juil":7,"août":8,"aout":8,"sept":9,"oct":10,"nov":11,"déc":12,"dec":12};
+function trDate(d,m,y){ const k=String(m).toLowerCase().replace(/[.\s]/g,""); const mo=FR_MOIS[k]||FR_MOIS[k.slice(0,4)]||FR_MOIS[k.slice(0,3)]; if(!mo) return null; return y+"-"+pad(mo)+"-"+pad(Number(d)); }
+function parseTRPdfText(text){
+  const m=text.match(/DATE\s+(\d{1,2})\s+([A-Za-zéèûôîà.]+)\s+(\d{4})\s*-\s*(\d{1,2})\s+([A-Za-zéèûôîà.]+)\s+(\d{4})/i); if(!m||!/TRADE REPUBLIC/i.test(text)) return null;
+  const from=trDate(m[1],m[2],m[3]), to=trDate(m[4],m[5],m[6]); if(!from||!to) return null;
+  const last=name=>{ const re=new RegExp("^\\s*"+name+"\\s+(.+)$","mi"); const l=text.match(re); if(!l) return null; const am=(l[1].match(/-?\d[\d\s.]*,\d{2}\s*€/g)||[]).map(x=>parseFloat(x.replace(/[\s€.]/g,"").replace(",","."))); return am.length>=4?am[am.length-1]:null; };
+  const courant=last("Compte courant"), pea=last("Compte PEA"); if(courant==null&&pea==null) return null;
+  return {from,to,courant,pea};
+}
+async function readTRPdf(file){
+  try{ const text=await pdfText(file); const r=parseTRPdfText(text); if(!r){ toast("Ce PDF n'est pas un relevé Trade Republic reconnu"); return; } state.pdfBal=r; render(); }
+  catch(e){ toast("Lecture du PDF impossible : "+(e.message||e)); }
+}
 async function readCSV(file){
   const text=await decodeFile(file); const lines=text.split(/\r?\n/).filter(l=>l.trim());
   let ops=[],source="",balance=null,acc="cc",isCard=false;
@@ -2680,7 +2697,7 @@ async function readCSV(file){
       if(/BUY|PRIVATE_MARKET/.test(type)){ const mk=d.slice(0,7); (buys[mk]=buys[mk]||{v:0,n:0}); buys[mk].v+=amt; buys[mk].n++; continue; }
       ops.push({d,amt:Math.round(amt*100)/100,label:label.slice(0,80),...c,acc});
     }
-    for(const [mk,x] of Object.entries(buys)) ops.push({d:mk+"-28",amt:Math.round(x.v*100)/100,label:"Achats ETF / PEA ("+x.n+" ordres)",cat:"epa",sub:"ETF / PEA",acc});
+    for(const [mk,x] of Object.entries(buys)){ const dd=mk===nowMk()&&mk+"-28">todayISO()?todayISO():mk+"-28"; ops.push({d:dd,amt:Math.round(x.v*100)/100,label:"Achats ETF / PEA ("+x.n+" ordre"+(x.n>1?"s":"")+")",cat:"epa",sub:"ETF / PEA",acc,etfGroup:true}); }
   } else {
     const H=splitCSV(head,";").map(h=>h.toLowerCase());
     const iD=H.findIndex(h=>h.startsWith("date")), iDeb=H.findIndex(h=>h.startsWith("d")&&h.includes("bit")), iCre=H.findIndex(h=>h.startsWith("cr")), iL=H.findIndex(h=>h.startsWith("libell")), iS=H.findIndex(h=>h.startsWith("solde")), iCarte=H.findIndex(h=>h.startsWith("carte"));
@@ -2698,7 +2715,8 @@ async function readCSV(file){
   const usedM=new Set();
   const grps={}; for(const x of manual) if(x.grp){ (grps[x.grp]=grps[x.grp]||{amt:0,d:x.d,ids:[]}); grps[x.grp].amt+=x.amt; grps[x.grp].ids.push(x.id); }
   const usedG=new Set();
-  const fresh=ops.filter(o=>{ if(existing.has(o.srcKey||keyOf(o))) return false;
+  const fresh=ops.filter(o=>{ if(o.etfGroup){ const ex=opsOf(mkOf(o.d)).find(x=>x.acc==="tr"&&/^Achats ETF \/ PEA \(/.test(x.label||"")); if(ex){ if(Math.abs(ex.amt-o.amt)<0.005) return false; o.replaceId=ex.id; o.replaceNote=(ex.label||"")+" → "+o.label; return true; } }
+      if(existing.has(o.srcKey||keyOf(o))) return false;
       const g=Object.entries(grps).find(([id,x])=>!usedG.has(id)&&Math.abs(x.amt-o.amt)<0.005&&near(x.d,o.d)); if(g){ usedG.add(g[0]); return false; }
       const m=manual.find(x=>!x.grp&&!usedM.has(x.id)&&Math.abs(x.amt-o.amt)<0.005&&near(x.d,o.d)); if(m){ usedM.add(m.id); return false; } return true; })
     .map(o=>({...o,id:uid(),note:"",imported:true}));
@@ -2713,7 +2731,7 @@ async function readCSV(file){
 function doImportCSV(){
   const p=state.importPreview; if(!p) return; const by={};
   for(const o of p.ops){ (by[mkOf(o.d)]=by[mkOf(o.d)]||[]).push(o); }
-  for(const [mk,list] of Object.entries(by)) setMonthOps(mk,[...opsOf(mk),...list]);
+  for(const [mk,list] of Object.entries(by)){ const rid=new Set(list.filter(o=>o.replaceId).map(o=>o.replaceId)); const clean=list.map(o=>{ const c=Object.assign({},o); delete c.replaceId; delete c.replaceNote; delete c.etfGroup; return c; }); setMonthOps(mk,[...opsOf(mk).filter(o=>!rid.has(o.id)),...clean]); }
   if(p.balance!=null && /compte courant/.test(p.source)){ const cc=S().accounts.find(a=>a.id==="cc"); cc.balance=p.balance; cc.balanceDate=state.importBalanceDate||todayISO(); saveSettings(); }
   if(p.matched&&p.matched.length){ const ms=new Set(p.matched); for(const m of allMonths()){ let ch=false; for(const o of opsOf(m)) if(ms.has(o.id)&&!o.bank){ o.bank=true; ch=true; } if(ch) Store.saveMonth(m); } }
   if(p.card) state.reco={cycTot:p.cycTot,dmin:p.dmin,dmax:p.dmax,added:p.ops.length,missing:(p.missing||[]).length};
