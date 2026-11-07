@@ -427,6 +427,7 @@ function recStatus(mk,budget){
     // paie : si le salaire du mois est arrivé (paye saisie ou bulletin déposé), la rentrée prévue est réglée, quel que soit le montant
     const mm=m||((kindOf(r.cat)==="rev"&&r.sub==="Salaire"&&(r.day||1)>=25)?ops.find(o=>!used.has(o.id)&&o.amt>0&&o.cat==="rev"&&o.sub==="Salaire"&&(o.paieOf||o.todoPaie||Number(o.d.slice(8))>=25)):null);
     if(mm) used.add(mm.id);
+    if(!mm&&r.stopped&&mk<nowMk()) continue;   // abonnement arrêté : plus aucun prélèvement attendu dans les mois passés
     out.push({r,amt,paid:!!mm,op:mm,date:rm+"-"+pad(Math.min(r.day||1,lastDay(rm)))});
   }
   return out.sort((a,b)=>a.date.localeCompare(b.date));
