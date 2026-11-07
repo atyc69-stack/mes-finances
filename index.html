@@ -384,6 +384,7 @@ function totals(mk){
   for(const o of budgetOps(mk)){
     const k=kindOf(o.cat);
     if(k==="neu") continue;
+    if(k==="ent"){ r.ent=(r.ent||0)+o.amt; continue; }
     if(k==="rev"){ r.rev+=o.amt; continue; }
     if(k==="epa"){ r.epa+=o.amt; continue; }
     if(k==="cre"){ if(o.amt<0) r.creRemb+=o.amt; else r.creEmp+=o.amt; continue; }
@@ -903,7 +904,7 @@ function parsePhrase(txt){
   if(mc){ const f=findCat(mc[1]); if(f){ r.cat=f.cat; r.sub=f.sub; } else { const i=norm(raw).indexOf(mc[1].trim()); r.unknown=(i>=0?raw.substr(i,mc[1].trim().length):mc[1]).replace(/^./,c=>c.toUpperCase()); } }
   if(!r.cat){ const f=r.label?autoCat(r.label.toUpperCase(),r.kind==="rev"?1:-1):null; if(f&&f.cat!=="div"&&f.cat!=="neu"){ r.cat=f.cat; r.sub=f.sub; } else { const g=findCat(r.label)||findCat(t.split(" ").find(w=>findCat(w))||""); if(g){ r.cat=g.cat; r.sub=g.sub; } } }
   if(r.cat==="san"&&r.sub==="Remboursements") r.kind="rembt";
-  if(!r.cat){ r.cat=r.kind==="rev"?"rev":"div"; r.sub=r.kind==="rev"?"Autres revenus":"Imprévus"; }
+  if(!r.cat){ r.cat=r.kind==="rev"?"ent_aut":"div"; r.sub=r.kind==="rev"?"Autre entrée":"Imprévus"; }
   if(!r.label) r.label=r.sub||"Opération";
   return r;
 }
@@ -942,7 +943,7 @@ function voiceStart(){
 
 /* ---------- OPÉRATIONS ---------- */
 function catOptions(kind,sel){
-  const list=cats().filter(c=> kind==="rev"?c.kind==="rev": kind==="neu"?(c.kind==="neu"||c.kind==="epa"||c.kind==="cre"):(c.kind==="dep"||c.kind==="cre"||c.kind==="epa"));
+  const list=cats().filter(c=> kind==="rev"?(c.kind==="rev"||c.kind==="ent"): kind==="neu"?(c.kind==="neu"||c.kind==="epa"||c.kind==="cre"):(c.kind==="dep"||c.kind==="cre"||c.kind==="epa"));
   return list.map(c=>`<option value="${c.id}" ${c.id===sel?"selected":""}>${esc(c.name)}</option>`).join("");
 }
 function subOptions(cid,sel){ const c=catById(cid); return (c?c.subs:[]).map(s=>`<option ${s===sel?"selected":""}>${esc(s)}</option>`).join(""); }
@@ -950,11 +951,11 @@ function avReste(){ const el=$("#av-reste"); if(!el) return; const a=parseAmt(($
 function vOpsSaisir(){
   const mk=state.month;
   const ed=state.editId?opsOf(state.editMk).find(o=>o.id===state.editId):null;
-  const f=state.form; const kind=ed?(kindOf(ed.cat)==="rev"?"rev":kindOf(ed.cat)==="dep"?"dep":"neu"):f.kind;
-  const cat=ed?ed.cat:(f.cat&&catById(f.cat)?f.cat:(kind==="rev"?"rev":kind==="neu"?"neu":"ali"));
+  const f=state.form; const kind=ed?((kindOf(ed.cat)==="rev"||kindOf(ed.cat)==="ent")?"rev":kindOf(ed.cat)==="dep"?"dep":"neu"):f.kind;
+  const cat=ed?ed.cat:(f.cat&&catById(f.cat)?f.cat:(kind==="rev"?(catById("ent_aut")?"ent_aut":"rev"):kind==="neu"?"neu":"ali"));
   const defDate=ed?ed.d:(mk===nowMk()?todayISO():mk+"-01");
   let h=banner();
-  const kindBtns=`<div class="kind" role="group" aria-label="Type"><button type="button" data-act="kind" data-k="dep" class="${kind==="dep"?"on":""}">Dépense</button><button type="button" data-act="kind" data-k="rev" class="${kind==="rev"?"on":""}">Revenu</button><button type="button" data-act="kind" data-k="neu" class="${kind==="neu"?"on":""}">Virement</button><button type="button" data-act="kind" data-k="pro" class="${kind==="pro"?"on":""}">Frais pro</button><button type="button" data-act="kind" data-k="av" class="${kind==="av"?"on":""}">Avance</button></div>`;
+  const kindBtns=`<div class="kind" role="group" aria-label="Type"><button type="button" data-act="kind" data-k="dep" class="${kind==="dep"?"on":""}">Dépense</button><button type="button" data-act="kind" data-k="rev" class="${kind==="rev"?"on":""}">Entrée d'argent</button><button type="button" data-act="kind" data-k="neu" class="${kind==="neu"?"on":""}">Virement</button><button type="button" data-act="kind" data-k="pro" class="${kind==="pro"?"on":""}">Frais pro</button><button type="button" data-act="kind" data-k="av" class="${kind==="av"?"on":""}">Avance</button></div>`;
   const ndfList=[]; for(const m of allMonths()) for(const o of opsOf(m)) if(o.pro&&o.pro.status==="attente") ndfList.push(o);
   const ndfCard=ndfList.length?`<section class="card"><div class="ch"><h2>Notes de frais à recevoir</h2><span class="s">${eur(ndfList.reduce((a,o)=>a+Number(o.pro.remb||-o.amt),0))}</span></div>${ndfList.map(o=>`<div class="row"><div class="t"><b>${esc(o.label)}</b><small>${esc(dFr(o.d))} · attendu sur la paie ${esc(deM(o.pro.paie,true))}</small></div><span class="a" style="white-space:nowrap"><input class="in num" style="display:inline;width:84px;height:30px;padding:0 6px;text-align:right" inputmode="decimal" data-ndfremb="${o.id}" data-mk="${mkOf(o.d)}" value="${String(Number(o.pro.remb||-o.amt)).replace(".",",")}" aria-label="Montant remboursé"> €</span><button class="btn sm" data-act="ndf-recu" data-id="${o.id}" data-mk="${mkOf(o.d)}">Reçu</button></div>`).join("")}</section>`:"";
   const avList=[]; for(const m of allMonths()) for(const o of opsOf(m)) if(o.av&&o.av.status==="attente") avList.push({o,m});
@@ -1249,9 +1250,9 @@ function vOpsList(mk){
   let list=(state.stF?cycOpsAll():opsOf(mk)).filter(o=>(!fl.cat||o.cat===fl.cat)&&(!fl.acc||o.acc===fl.acc)&&(fl.neu||kindOf(o.cat)!=="neu"||!!o.pro||o.sub==="Notes de frais"||o.sub==="Virements internes"||o.sub==="Règlement carte")&&(!fl.kind||(fl.kind==="rev"?(o.amt>0&&kindOf(o.cat)!=="neu"):fl.kind==="dep"?(o.amt<0&&kindOf(o.cat)!=="neu"):(o.sub==="Notes de frais"||!!o.pro)))&&(!state.stF||cardState(o)===state.stF)&&(!q||(o.label+" "+(o.sub||"")+" "+(o.note||"")).toLowerCase().includes(q)));
   list.sort((a,b)=>b.d.localeCompare(a.d)||String(b.id).localeCompare(String(a.id)));
   const t=totals(mk), sum=list.reduce((a,o)=>a+(kindOf(o.cat)==="neu"?0:o.amt),0);
-  h+=`<section class="card"><div class="ch"><h2>${esc(mLabel(mk))}</h2><span class="s num"><span class="pos">+${eur0(t.rev)}</span> · −${eur0(-t.sorties)}</span></div>
+  h+=`<section class="card"><div class="ch"><h2>${esc(mLabel(mk))}</h2><span class="s num"><span class="pos">+${eur0(t.rev+(t.ent||0))}</span> · −${eur0(-t.sorties)}</span></div>
    <div class="toolbar" style="margin-bottom:6px"><select class="in" id="f-month" aria-label="Mois" style="width:auto;min-width:150px;font-weight:600">${allMonths().slice().reverse().map(m=>`<option value="${m}" ${m===mk?"selected":""}>${esc(mLabel(m))}</option>`).join("")}</select>
-   <div class="seg" role="tablist" aria-label="Type" style="flex:1">${[["","Tout"],["rev","Revenus"],["dep","Dépenses"],["pro","Notes de frais"]].map(([k,l])=>`<button class="mchip ${fl.kind===k?"on":""}" data-act="op-kind" data-k="${k}" role="tab" aria-selected="${fl.kind===k}">${l}</button>`).join("")}</div></div>
+   <div class="seg" role="tablist" aria-label="Type" style="flex:1">${[["","Tout"],["rev","Entrées"],["dep","Dépenses"],["pro","Notes de frais"]].map(([k,l])=>`<button class="mchip ${fl.kind===k?"on":""}" data-act="op-kind" data-k="${k}" role="tab" aria-selected="${fl.kind===k}">${l}</button>`).join("")}</div></div>
    <div class="toolbar" style="margin-bottom:6px"><input class="in grow" id="f-q" type="search" placeholder="Rechercher" value="${esc(fl.q)}">
    <select class="in" id="f-cat" style="width:auto;min-width:150px"><option value="">Toutes catégories</option>${cats().map(c=>`<option value="${c.id}" ${fl.cat===c.id?"selected":""}>${esc(c.name)}</option>`).join("")}</select>
    <select class="in" id="f-acc" style="width:auto;min-width:130px"><option value="">Tous comptes</option>${S().accounts.map(a=>`<option value="${a.id}" ${fl.acc===a.id?"selected":""}>${esc(a.name)}</option>`).join("")}</select>
@@ -1800,14 +1801,17 @@ function vRecurring(mk){
    <div class="fld"><label for="r-sub">Sous-catégorie</label><select class="in" id="r-sub">${subOptions(ed?ed.cat:"log",ed?ed.sub:"")}</select></div>
    <div class="fld"><label for="r-day">Jour du mois</label><input class="in num" id="r-day" type="number" min="1" max="31" value="${ed?ed.day:5}"></div>
    <div class="fld"><label for="r-start">À partir de</label><input class="in" id="r-start" type="month" value="${ed?(ed.once||ed.start||""):nowMk()}"></div>
-   <div class="fld"><label for="r-end">Jusqu'à (facultatif)</label><input class="in" id="r-end" type="month" value="${ed?(ed.end||""):""}"></div>
+   <div class="fld" style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="r-stopped" ${ed&&ed.stopped?"checked":""}> <b>Abonnement arrêté</b> <span class="muted" style="font-size:12px">je l'ai résilié, plus aucun prélèvement</span></label></div>
+   <div class="fld"><label for="r-end">Dernier mois prélevé (ou « jusqu'à », facultatif)</label><input class="in" id="r-end" type="month" value="${ed?(ed.end||""):""}"></div>
+   <div class="fld"><label for="r-stopdate">Arrêté le (facultatif)</label><input class="in" id="r-stopdate" type="date" value="${ed&&ed.stopDate?ed.stopDate:""}"></div>
    <div class="fld"><label for="r-once">Fréquence</label><select class="in" id="r-once"><option value="">Chaque mois</option><option value="once" ${ed&&ed.once?"selected":""}>Une seule fois</option></select></div>
    <div class="fld"><label for="r-block">Où la ranger dans la liste ?</label><select class="in" id="r-block">${[["","Automatique (selon la date de fin)"],["an","Toute l'année"],["fin","Se termine bientôt"],["mois","Certains mois"]].map(([v,l])=>`<option value="${v}" ${(ed&&ed.block||"")===v?"selected":""}>${l}</option>`).join("")}</select></div>
    <button class="btn pri" type="submit">${ed?"Enregistrer":"Ajouter"}</button></form></section>`;
   const limit12=addM(nowMk(),12);
   const kindR=r=>{ if(r.block==="an"||r.block==="fin"||r.block==="mois") return r.block; if(r.months&&r.months.length) return "mois"; if(r.end&&r.end>limit12) return "an"; return (r.end||/dernier|dernière/i.test(r.label)||(r.cat==="cre"&&!r.end))?"fin":"an"; };
   const seg=state.recSeg||"all", now=nowMk();
-  const lines=recs.filter(r=>kindR(r)!=="x");
+  const stopPast=r=>r.stopped&&!r.once&&r.end&&r.end<now&&kindOf(r.cat)==="dep";
+  const lines=recs.filter(r=>kindR(r)!=="x"&&!stopPast(r));
   const blocks=[{k:"an",t:"Toute l'année",s:"reviennent chaque mois, sans date de fin"},{k:"fin",t:"Se termine bientôt",s:"fin dans les 12 prochains mois, et paiements « dernier ». Au-delà (marqué d'un * orange), c'est rangé dans « Toute l'année »"},{k:"mois",t:"Certains mois",s:"pas tous les mois"}];
   const chips=[["all","Tout"],["an","Toute l'année"],["fin","Se termine"],["mois","Certains mois"]];
   h+=`<div class="seg" role="tablist" style="margin-bottom:12px">${chips.map(c=>`<button style="font-size:11.5px;padding:8px 2px" class="${seg===c[0]?"on":""}" data-act="rec-seg" data-v="${c[0]}">${c[1]}</button>`).join("")}</div>`;
@@ -1818,6 +1822,12 @@ function vRecurring(mk){
     h+=`<section class="card"><div class="ch"><h2>${b.t}</h2>${b.k==="mois"?"":`<span class="s num ${tot<0?"neg":""}">${sgn(tot)} par mois</span>`}</div><p class="muted" style="margin:0 0 6px;font-size:12.5px">${b.s}</p>
      ${L.length?recGroups(L).map(x=>x.group?recGroupRow(x):recRow(x.r)).join(""):'<p class="muted" style="font-size:13px">Rien dans ce bloc.</p>'}</section>`;
   }
+  { const SP=recs.filter(stopPast).sort((a,b)=>b.end.localeCompare(a.end));
+    if(SP.length&&(seg==="all")){ const mon=SP.reduce((a,r)=>a-r.amt,0);
+      h+=`<section class="card"><div class="ch"><h2>Abonnements arrêtés</h2><span class="s">mon historique de résiliations</span></div>
+       ${SP.map(r=>`<div class="row"><div class="t" style="white-space:normal"><b style="white-space:normal">${esc(r.label)}</b><small style="white-space:normal">dernier prélèvement : ${esc(mLabel(r.end).toLowerCase())}${r.stopDate?" · arrêté le "+esc(dFr(r.stopDate)):""}</small></div><div style="text-align:right"><b class="num pos">${eur(-r.amt)} / mois</b><div class="muted" style="font-size:12px">${eur0(-r.amt*12)} / an</div></div><button class="ibtn" data-act="edit-rec" data-id="${r.id}" aria-label="Modifier">${ICON.edit}</button></div>`).join("")}
+       <div class="row" style="border-top:1px solid var(--line)"><b>J'économise</b><div style="text-align:right"><b class="num pos" style="font-size:16px">${eur(mon)} / mois</b><div class="muted" style="font-size:12px">${eur0(mon*12)} / an</div></div></div>
+       <p class="muted" style="font-size:12px;margin:6px 0 0">L'économie = ce que tu payais chaque mois, tant que l'abonnement reste arrêté. Pour le relancer, décoche « Abonnement arrêté » dans le crayon.</p></section>`; } }
   return h;
 }
 function vLeaks(mk){
@@ -1827,6 +1837,7 @@ function vLeaks(mk){
   const recAbo=(S().recurring||[]).filter(r=>r.cat==="abo"&&recActive(r,mk));
   const aboM=-recAbo.reduce((a,r)=>a+r.amt,0);
   items.push({ic:"📺",col:"rgba(56,189,248,.14)",t:`Abonnements : ${eur(aboM)} par mois, soit ${eur0(aboM*12)} par an`,p:recAbo.map(r=>r.label+" "+eur(-r.amt)).join(" · ")+". Demande-toi pour chacun : est-ce que je l'ai utilisé ce mois-ci ?"});
+  { const SPx=(S().recurring||[]).filter(r=>r.stopped&&!r.once&&r.end&&r.end<nowMk()&&kindOf(r.cat)==="dep"); if(SPx.length){ const m=SPx.reduce((a,r)=>a-r.amt,0); items.push({ic:"✂️",col:"rgba(74,222,128,.14)",t:`Abonnements arrêtés : tu économises ${eur0(m*12)} par an`,p:SPx.map(r=>r.label+" "+eur(-r.amt)+"/mois").join(" · ")+"."}); } }
   // 2. téléphone hors forfait
   const tel=opsOf(mk).concat(opsOf(addM(mk,-1))).filter(o=>/BOUYGUES/i.test(o.label)&&-o.amt>10.5);
   if(tel.length) items.push({ic:"📱",col:"rgba(255,184,107,.14)",t:"Téléphone : hors forfait détecté",p:`Prélèvements à ${tel.map(o=>eur(-o.amt)).join(", ")} au lieu de 9,99 €. Vérifie les options ou consommations hors forfait de cette ligne.`});
@@ -1835,7 +1846,7 @@ function vLeaks(mk){
   if(agios<0) items.push({ic:"🏦",col:"rgba(255,122,107,.14)",t:`Découvert : ${eur(-agios)} d'agios et de commissions en ${yr}`,p:"Ces frais disparaissent dès que le compte reste positif. C'est le premier gain du plan commissions."});
   // 4. FDJ
   let fdj=0; for(const m of allMonths()) if(m.startsWith(yr)) for(const o of opsOf(m)) if(o.cat==="jeu") fdj+=o.amt;
-  let gains=0; for(const m of allMonths()) if(m.startsWith(yr)) for(const o of opsOf(m)) if(o.cat==="rev"&&o.sub==="Gains FDJ") gains+=o.amt;
+  let gains=0; for(const m of allMonths()) if(m.startsWith(yr)) for(const o of opsOf(m)) if((o.cat==="rev"||o.cat==="ent_gain")&&/Gains FDJ/.test(o.sub||"")) gains+=o.amt;
   if(fdj<0) items.push({ic:"🎟️",col:"rgba(248,113,113,.14)",t:`Jeux FDJ : ${eur(-fdj)} misés en ${yr}, ${eur(gains)} de gains saisis`,p:`Solde net : ${sgn(fdj+gains)}. Plafond du mois : ${(S().plafonds||{})["non:jeu"]==null?"aucun":eur0((S().plafonds||{})["non:jeu"])}.`});
   // 5. dépassements de plafond
   const PG=planGroups(mk); const over=[...PG.ess.list,...PG.non.list].filter(x=>x.plaf!=null&&x.spent>x.plaf+0.5);
@@ -2244,17 +2255,17 @@ function vCatManager(){
   const ce0=state.catOp||{};
   let h=`<section class="card"><div class="ch"><h2>Catégories et sous-catégories</h2><span class="s">touche une catégorie pour la dérouler</span></div>
    <button class="btn pri" data-act="cat-new" style="width:100%;margin-bottom:8px">${state.catNew?"Annuler":"+ Nouvelle catégorie"}</button>
-   ${state.catNew?`<form class="form" id="catNewForm" autocomplete="off" style="margin-bottom:10px"><div class="fld"><label for="cn-name">Nom</label><input class="in" id="cn-name" placeholder="Ex. Animaux" required></div><div class="fld"><label for="cn-kind">Type</label><select class="in" id="cn-kind"><option value="dep">Dépense</option><option value="rev">Revenu</option></select></div><div class="fld" id="cn-grp-w"><label for="cn-grp">Groupe de budget</label><select class="in" id="cn-grp"><option value="ess">Essentiel</option><option value="non" selected>Non essentiel</option></select></div><div class="fld"><label for="cn-sub">Première sous-catégorie (facultatif)</label><input class="in" id="cn-sub" placeholder="Ex. Vétérinaire"></div><button class="btn pri" type="submit">Créer</button></form>`:""}
+   ${state.catNew?`<form class="form" id="catNewForm" autocomplete="off" style="margin-bottom:10px"><div class="fld"><label for="cn-name">Nom</label><input class="in" id="cn-name" placeholder="Ex. Animaux" required></div><div class="fld"><label for="cn-kind">Type</label><select class="in" id="cn-kind"><option value="dep">Dépense</option><option value="rev">Revenu du travail</option><option value="ent">Entrée d'argent (hors revenus)</option></select></div><div class="fld" id="cn-grp-w"><label for="cn-grp">Groupe de budget</label><select class="in" id="cn-grp"><option value="ess">Essentiel</option><option value="non" selected>Non essentiel</option></select></div><div class="fld"><label for="cn-sub">Première sous-catégorie (facultatif)</label><input class="in" id="cn-sub" placeholder="Ex. Vétérinaire"></div><button class="btn pri" type="submit">Créer</button></form>`:""}
    <input class="in" id="cat-q" placeholder="Rechercher une catégorie" value="${esc(state.catQ||"")}" autocomplete="off" style="margin-bottom:8px">
-   <div class="toolbar" style="margin-bottom:8px;flex-wrap:wrap">${[["all","Toutes"],["dep","Dépenses"],["rev","Revenus"],["ce","Crédits, épargne"],["neu","Neutres"]].map(([k,l])=>`<button class="btn sm ${(state.catF||"all")===k?"pri":""}" data-act="cat-f" data-f="${k}">${l}</button>`).join("")}</div>
+   <div class="toolbar" style="margin-bottom:8px;flex-wrap:wrap">${[["all","Toutes"],["dep","Dépenses"],["rev","Entrées d'argent"],["ce","Crédits, épargne"],["neu","Neutres"]].map(([k,l])=>`<button class="btn sm ${(state.catF||"all")===k?"pri":""}" data-act="cat-f" data-f="${k}">${l}</button>`).join("")}</div>
    <div id="catList">${catListHtml()}</div></section>`;
   return h;
 }
 function catListHtml(){
-  const ce=state.catOp||{}; const SYS=["rev","cre","epa","neu"]; const q=(state.catQ||"").trim().toLowerCase(), F=state.catF||"all";
+  const ce=state.catOp||{}; const SYS=["rev","cre","epa","neu","ent_rbt","ent_gain","ent_int","ent_aut"]; const q=(state.catQ||"").trim().toLowerCase(), F=state.catF||"all";
   const subTargets=(exCat,exSub)=>cats().filter(c=>c.kind!=="neu").map(c=>`<optgroup label="${esc(c.name)}">${c.subs.filter(x=>!(c.id===exCat&&x===exSub)).map(x=>`<option value="${c.id}|${esc(x)}">${esc(x)}</option>`).join("")}</optgroup>`).join("");
   let h="";
-  const kindOk=c=>F==="all"||(F==="ce"?(c.kind==="cre"||c.kind==="epa"):c.kind===F);
+  const kindOk=c=>F==="all"||(F==="ce"?(c.kind==="cre"||c.kind==="epa"):F==="rev"?(c.kind==="rev"||c.kind==="ent"):c.kind===F);
   let shown=0;
   for(const c of cats()){
     if(!kindOk(c)) continue;
@@ -2319,8 +2330,22 @@ function renderLogin(msg){
 function renderEmpty(){
   $("#root").innerHTML=`<div class="login"><div class="logo">€</div><h1>Bienvenue</h1><p class="muted">Ton espace est vide. Importe le fichier <b>historique.json</b> préparé avec Claude pour retrouver tout ton historique depuis janvier.</p><label class="btn pri" for="jsonFile0" style="display:inline-flex;align-items:center;margin-top:14px">Importer historique.json</label><input type="file" id="jsonFile0" accept=".json,application/json" hidden>${state.confirm==="restore"?`<div class="banner" style="margin-top:12px"><div class="grow">Fichier prêt : ${esc(state.pendingInfo||"")}</div><button class="btn sm pri" data-act="restore-ok">Importer</button></div>`:""}</div>`;
 }
+function entFix(){
+  const s=S(); if(!s||!s.cats) return;
+  let cc=false; const add=(id,name,color,subs)=>{ if(!s.cats.find(c=>c.id===id)){ const at=s.cats.findIndex(c=>c.kind==="cre"); s.cats.splice(at<0?s.cats.length:at,0,{id,name,kind:"ent",color,subs}); cc=true; } };
+  add("ent_rbt","Remboursements reçus","#5EEAD4",["Santé (CPAM, mutuelle)","Achat remboursé","Remboursement d'un ami"]);
+  add("ent_gain","Cadeaux et gains","#F472B6",["Cadeau reçu","Gains FDJ et jeux","Vente d'occasion"]);
+  add("ent_int","Intérêts et placements","#60A5FA",["Intérêts de livret","Saveback, dividendes"]);
+  add("ent_aut","Autres entrées","#94A3B8",["Autre entrée"]);
+  const rev=s.cats.find(c=>c.id==="rev"); if(rev){ if(rev.name==="Revenus"){ rev.name="Mon travail"; cc=true; } const keep=["Salaire","Primes & commissions","Acompte sur salaire"]; const ns=rev.subs.filter(x=>keep.includes(x)||!["Gains FDJ","Autres revenus"].includes(x)); if(ns.length!==rev.subs.length){ rev.subs=ns; cc=true; } }
+  const mp=o=>{ if(o.cat!=="rev") return null; if(o.sub==="Gains FDJ") return {cat:"ent_gain",sub:"Gains FDJ et jeux"}; if(o.sub==="Autres revenus") return /INTEREST|SAVEBACK/i.test(o.label||"")?{cat:"ent_int",sub:"Saveback, dividendes"}:{cat:"ent_aut",sub:"Autre entrée"}; return null; };
+  for(const mk of allMonths()){ let c=false; for(const o of opsOf(mk)){ const m=mp(o); if(m){ o.cat=m.cat; o.sub=m.sub; c=true; } } if(c) Store.saveMonth(mk); }
+  for(const r of (s.recurring||[])){ const m=mp(r); if(m){ r.cat=m.cat; r.sub=m.sub; cc=true; } }
+  if(cc) Store.saveSettings();
+}
 function render(){
   if(!state.settings){ renderEmpty(); return; }
+  if(!state._entFix||state._entFixN!==allMonths().length){ state._entFix=true; state._entFixN=allMonths().length; try{ entFix(); }catch(e){} }
   const tabs=[["home","Accueil"],["ops","Opérations"],["budget","Budget"],["patri","Patrimoine"],["analyse","Analyse"]];
   const icons={home:ICON.home,ops:ICON.ops,budget:ICON.bud,patri:ICON.pat,analyse:ICON.ana};
   const keep={}; document.querySelectorAll("#root input[id],#root select[id]").forEach(el=>{ if(el.type!=="file"&&el.type!=="checkbox"&&!el.dataset.budget&&!el.dataset.plafond) keep[el.id]=el.value; });
@@ -2573,7 +2598,7 @@ document.addEventListener("submit",e=>{
     const v=parseAmt($("#o-amt").value); if(!(v>0)){ toast("Indique un montant supérieur à 0"); return; }
     const d=$("#o-date").value; if(!d){ toast("Indique une date"); return; }
     const cat=$("#o-cat").value, k=kindOf(cat);
-    let amt; if(k==="rev") amt=v; else if(k!=="dep" && $("#o-sign")) amt=v*Number($("#o-sign").value); else amt=-v;
+    let amt; if(k==="rev"||k==="ent") amt=v; else if(k!=="dep" && $("#o-sign")) amt=v*Number($("#o-sign").value); else amt=-v;
     const o={id:state.editId||uid(),d,amt,label:$("#o-label").value.trim()||catName(cat),cat,sub:$("#o-sub").value,acc:$("#o-acc").value,note:$("#o-note").value.trim(),fixed:$("#o-fixed").checked,card:$("#o-card").checked&&$("#o-acc").value==="cc"};
     if(cat==="san"&&$("#o-health").value) o.health=$("#o-health").value;
     const mk=mkOf(d);
@@ -2591,6 +2616,7 @@ document.addEventListener("submit",e=>{
     const r={id:state.editRec||uid(),label:$("#r-label").value.trim(),amt,cat:$("#r-cat").value,sub:$("#r-sub").value,day:Number($("#r-day").value)||1,
       start:once?null:($("#r-start").value||null),end:once?null:($("#r-end").value||null),once:once?($("#r-start").value||nowMk()):null,acc:"cc"};
     const old=state.editRec?S().recurring.find(x=>x.id===state.editRec):null; if(old){ for(const k of Object.keys(old)) if(!(k in r)) r[k]=old[k]; }
+    if($("#r-stopped").checked){ if(!r.end){ toast("Indique le dernier mois prélevé"); return; } r.stopped=true; const sd=$("#r-stopdate").value; if(sd) r.stopDate=sd; else delete r.stopDate; } else { delete r.stopped; delete r.stopDate; }
     const bl=$("#r-block").value; if(bl) r.block=bl; else delete r.block;
     S().recurring=[...S().recurring.filter(x=>x.id!==r.id),r]; saveSettings(); state.editRec=null; state.recNew=false; render(); toast("Récurrence enregistrée");
   }
@@ -2633,7 +2659,7 @@ document.addEventListener("submit",e=>{
   if(f.id==="etfForm"){ const v=parseAmt($("#etf-v").value); if(!isFinite(v)||v<0){ toast("Montant invalide"); return; } S().prefs.etfValue=v; saveSettings(); render(); toast("ETF mis à jour"); return; }
   if(f.id==="fondsCibleForm"){ const v=parseAmt($("#fc-amt").value); if(!(v>0)){ toast("Montant invalide"); return; } S().prefs.fondsCible=v; saveSettings(); render(); toast("Objectif enregistré"); }
   if(f.id==="catNewForm"){ const n=$("#cn-name").value.trim(); if(!n){ toast("Donne un nom"); return; } if(cats().some(c=>c.name.toLowerCase()===n.toLowerCase())){ toast("Cette catégorie existe déjà"); return; }
-    const kind=$("#cn-kind").value, sub=$("#cn-sub").value.trim()||(kind==="rev"?"Autres revenus":"Général"), pal=["#7C8CFF","#FFB86B","#60A5FA","#F472B6","#34D399","#FBBF24","#FB923C","#A78BFA"], id=uid();
+    const kind=$("#cn-kind").value, sub=$("#cn-sub").value.trim()||(kind==="rev"||kind==="ent"?"Autre entrée":"Général"), pal=["#7C8CFF","#FFB86B","#60A5FA","#F472B6","#34D399","#FBBF24","#FB923C","#A78BFA"], id=uid();
     const at=S().cats.findIndex(c=>c.kind==="cre"); S().cats.splice(at<0?S().cats.length:at,0,{id,name:n,kind,color:pal[S().cats.length%pal.length],subs:[sub]});
     if(kind==="dep"){ const gm=S().groupMap=S().groupMap||{}; gm[id+"/"+sub]=$("#cn-grp").value; }
     state.catNew=false; state.catQ=""; state.catF="all"; state.catOpen=Object.assign(state.catOpen||{},{[id]:true}); saveSettings(); render(); toast("Catégorie créée"); { const el=document.getElementById("cat-"+id); if(el) el.scrollIntoView({block:"center"}); } return; }
@@ -2691,7 +2717,7 @@ async function doRestore(){ const d=state.pending; if(!d) return; state.confirm=
 
 /* ---- Import CSV : règles de rangement automatique ---- */
 const RULES=[
- [/VIR SYNOVO GROUP/,"rev","Salaire"],[/SYNOVO.*(NDF|PNEUS|REMBOURSEMENT)/,"neu","Notes de frais"],[/CPAM|HELIUM|SWISSLIFE/,"san","Remboursements"],[/DGFIP/,"rev","Autres revenus"],
+ [/VIR SYNOVO GROUP/,"rev","Salaire"],[/SYNOVO.*(NDF|PNEUS|REMBOURSEMENT)/,"neu","Notes de frais"],[/CPAM|HELIUM|SWISSLIFE/,"san","Remboursements"],[/DGFIP/,"ent_aut","Autre entrée"],
  [/RELEVE CARTE/,"neu","Règlement carte"],[/TRADE REP|INVESTISSEMENT|VIR DE M CYRIL RENAUD|VIR INST CYRIL RENAUD|M CYRIL RENAUD|Versement PEA|Retrait PEA/i,"neu","Virements internes"],
  [/ALTAREA/,"log","Loyer",1],[/ALPIQ/,"log","Électricité",1],[/ORANGE SA/,"log","Internet",1],
  [/ECH PRET.* 07 |RB IMP.*1807/,"cre","Passeport crédit",1],[/ECH PRET.* 02 |RB IMP.*1802/,"cre","Etalis",1],[/FRANFINANCE/,"cre","Franfinance",1],[/DEBLOCAGE PRET|ETALEMENT/,"cre","Argent emprunté"],
@@ -2711,7 +2737,7 @@ const RULES=[
 ];
 function autoCat(label,amt){
   for(const [rx,cat,sub,fixed] of RULES) if(rx.test(label)) return {cat,sub,fixed:!!fixed};
-  return amt>0?{cat:"rev",sub:"Autres revenus"}:{cat:"div",sub:"À identifier"};
+  return amt>0?{cat:"ent_aut",sub:"Autre entrée"}:{cat:"div",sub:"À identifier"};
 }
 function decodeFile(file){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>{ let t=r.result; if(t.includes("�")){ const r2=new FileReader(); r2.onload=()=>res(r2.result); r2.readAsText(file,"windows-1252"); } else res(t); }; r.readAsText(file,"utf-8"); }); }
 function splitCSV(line,sep){ const out=[]; let cur="",q=false; for(let i=0;i<line.length;i++){ const ch=line[i]; if(q){ if(ch==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; } else if(ch==='"') q=true; else if(ch===sep){ out.push(cur); cur=""; } else cur+=ch; } out.push(cur); return out; }
@@ -2744,7 +2770,7 @@ async function readCSV(file){
       let c;
       if(/BUY|PRIVATE_MARKET/.test(type)) c={cat:"epa",sub:"ETF / PEA"}; else if(type==="SELL") c={cat:"epa",sub:"ETF / PEA"};
       else if(/TRANSFER/.test(type)){ c={cat:"neu",sub:"Virements internes"}; label=(r[idx("description")]||label).replace("Incoming transfer from","Virement reçu de").split(" (FR")[0]; }
-      else if(/INTEREST|SAVEBACK/.test(type)) c={cat:"rev",sub:"Autres revenus"}; else c=autoCat(label,amt);
+      else if(/INTEREST|SAVEBACK/.test(type)) c={cat:"ent_int",sub:"Intérêts de livret"}; else c=autoCat(label,amt);
       if((r[idx("account_type")]||"")==="PEA"&&/TRANSFER/.test(type)) continue;
       if(/BUY|PRIVATE_MARKET/.test(type)){ const mk=d.slice(0,7); (buys[mk]=buys[mk]||{v:0,n:0}); buys[mk].v+=amt; buys[mk].n++; continue; }
       ops.push({d,amt:Math.round(amt*100)/100,label:label.slice(0,80),...c,acc});
