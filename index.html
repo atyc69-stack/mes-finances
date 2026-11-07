@@ -1810,10 +1810,10 @@ function vRecurring(mk){
   const limit12=addM(nowMk(),12);
   const kindR=r=>{ if(r.block==="an"||r.block==="fin"||r.block==="mois") return r.block; if(r.months&&r.months.length) return "mois"; if(r.end&&r.end>limit12) return "an"; return (r.end||/dernier|dernière/i.test(r.label)||(r.cat==="cre"&&!r.end))?"fin":"an"; };
   const seg=state.recSeg||"all", now=nowMk();
-  const stopPast=r=>r.stopped&&!r.once&&r.end&&r.end<now&&kindOf(r.cat)==="dep";
+  const stopPast=r=>isStopped(r,now);
   const lines=recs.filter(r=>kindR(r)!=="x"&&!stopPast(r));
   const blocks=[{k:"an",t:"Toute l'année",s:"reviennent chaque mois, sans date de fin"},{k:"fin",t:"Se termine bientôt",s:"fin dans les 12 prochains mois, et paiements « dernier ». Au-delà (marqué d'un * orange), c'est rangé dans « Toute l'année »"},{k:"mois",t:"Certains mois",s:"pas tous les mois"}];
-  const chips=[["all","Tout"],["an","Toute l'année"],["fin","Se termine"],["mois","Certains mois"]];
+  const chips=[["all","Tout"],["an","Toute l'année"],["fin","Se termine"],["mois","Certains mois"],["stop","Arrêtés"]];
   h+=`<div class="seg" role="tablist" style="margin-bottom:12px">${chips.map(c=>`<button style="font-size:11.5px;padding:8px 2px" class="${seg===c[0]?"on":""}" data-act="rec-seg" data-v="${c[0]}">${c[1]}</button>`).join("")}</div>`;
   for(const b of blocks){ if(seg!=="all"&&seg!==b.k) continue;
     const L=lines.filter(r=>kindR(r)===b.k);
@@ -1823,12 +1823,21 @@ function vRecurring(mk){
      ${L.length?recGroups(L).map(x=>x.group?recGroupRow(x):recRow(x.r)).join(""):'<p class="muted" style="font-size:13px">Rien dans ce bloc.</p>'}</section>`;
   }
   { const SP=recs.filter(stopPast).sort((a,b)=>b.end.localeCompare(a.end));
-    if(SP.length&&(seg==="all")){ const mon=SP.reduce((a,r)=>a-r.amt,0);
+    if(SP.length&&(seg==="all"||seg==="stop")){ const mon=SP.reduce((a,r)=>a-r.amt,0);
       h+=`<section class="card"><div class="ch"><h2>Abonnements arrêtés</h2><span class="s">mon historique de résiliations</span></div>
        ${SP.map(r=>`<div class="row"><div class="t" style="white-space:normal"><b style="white-space:normal">${esc(r.label)}</b><small style="white-space:normal">dernier prélèvement : ${esc(mLabel(r.end).toLowerCase())}${r.stopDate?" · arrêté le "+esc(dFr(r.stopDate)):""}</small></div><div style="text-align:right"><b class="num pos">${eur(-r.amt)} / mois</b><div class="muted" style="font-size:12px">${eur0(-r.amt*12)} / an</div></div><button class="ibtn" data-act="edit-rec" data-id="${r.id}" aria-label="Modifier">${ICON.edit}</button></div>`).join("")}
        <div class="row" style="border-top:1px solid var(--line)"><b>J'économise</b><div style="text-align:right"><b class="num pos" style="font-size:16px">${eur(mon)} / mois</b><div class="muted" style="font-size:12px">${eur0(mon*12)} / an</div></div></div>
        <p class="muted" style="font-size:12px;margin:6px 0 0">L'économie = ce que tu payais chaque mois, tant que l'abonnement reste arrêté. Pour le relancer, décoche « Abonnement arrêté » dans le crayon.</p></section>`; } }
   return h;
+}
+function vEconomies(){
+  const now=nowMk(), SP=(S().recurring||[]).filter(r=>isStopped(r,now)).sort((a,b)=>b.end.localeCompare(a.end)); if(!SP.length) return "";
+  const mon=SP.reduce((a,r)=>a-r.amt,0); let saved=0; for(const r of SP){ let m=addM(r.end,1), n=0; while(m<=now){ n++; m=addM(m,1); } saved+=n*(-r.amt); }
+  return `<section class="card"><div class="ch"><h2>Mes économies</h2><span class="s">les abonnements que j'ai arrêtés</span></div>
+   <div class="num" style="font-size:26px;font-weight:700;margin:4px 0 0;color:var(--mint)">${eur0(mon*12)} <span style="font-size:14px;font-weight:500">par an</span></div><div class="muted" style="font-size:12.5px">soit ${eur(mon)} par mois</div>
+   <div class="row" style="margin-top:10px"><span>Déjà économisé depuis les arrêts</span><b class="num" style="color:#38BDF8">${eur(saved)}</b></div>
+   ${SP.map(r=>`<div class="row"><div class="t" style="white-space:normal"><b style="white-space:normal">${esc(r.label)}</b><small style="white-space:normal">dernier prélèvement : ${esc(mLabel(r.end).toLowerCase())}</small></div><div style="text-align:right"><b class="num pos">${eur(-r.amt)} / mois</b><div class="muted" style="font-size:12px">${eur0(-r.amt*12)} / an</div></div></div>`).join("")}
+   <p class="muted" style="font-size:12px;margin:6px 0 0">Chaque nouvel arrêt s'ajoute ici tout seul. Le détail se modifie dans Budget, Récurrent, Arrêtés.</p></section>`;
 }
 function vLeaks(mk){
   const items=[];
@@ -1837,7 +1846,7 @@ function vLeaks(mk){
   const recAbo=(S().recurring||[]).filter(r=>r.cat==="abo"&&recActive(r,mk));
   const aboM=-recAbo.reduce((a,r)=>a+r.amt,0);
   items.push({ic:"📺",col:"rgba(56,189,248,.14)",t:`Abonnements : ${eur(aboM)} par mois, soit ${eur0(aboM*12)} par an`,p:recAbo.map(r=>r.label+" "+eur(-r.amt)).join(" · ")+". Demande-toi pour chacun : est-ce que je l'ai utilisé ce mois-ci ?"});
-  { const SPx=(S().recurring||[]).filter(r=>r.stopped&&!r.once&&r.end&&r.end<nowMk()&&kindOf(r.cat)==="dep"); if(SPx.length){ const m=SPx.reduce((a,r)=>a-r.amt,0); items.push({ic:"✂️",col:"rgba(74,222,128,.14)",t:`Abonnements arrêtés : tu économises ${eur0(m*12)} par an`,p:SPx.map(r=>r.label+" "+eur(-r.amt)+"/mois").join(" · ")+"."}); } }
+  { const SPx=(S().recurring||[]).filter(r=>isStopped(r)); if(SPx.length){ const m=SPx.reduce((a,r)=>a-r.amt,0); items.push({ic:"✂️",col:"rgba(74,222,128,.14)",t:`Abonnements arrêtés : tu économises ${eur0(m*12)} par an`,p:SPx.map(r=>r.label+" "+eur(-r.amt)+"/mois").join(" · ")+"."}); } }
   // 2. téléphone hors forfait
   const tel=opsOf(mk).concat(opsOf(addM(mk,-1))).filter(o=>/BOUYGUES/i.test(o.label)&&-o.amt>10.5);
   if(tel.length) items.push({ic:"📱",col:"rgba(255,184,107,.14)",t:"Téléphone : hors forfait détecté",p:`Prélèvements à ${tel.map(o=>eur(-o.amt)).join(", ")} au lieu de 9,99 €. Vérifie les options ou consommations hors forfait de cette ligne.`});
@@ -2006,6 +2015,7 @@ function vAnalyse(){
   const top=segs.slice(0,6); if(segs.length>6) top.push({label:"Autres",v:segs.slice(6).reduce((a,x)=>a+x.v,0),color:"#475569"});
   h+=`<section class="card"><div class="ch"><h2>Où part l'argent</h2><span class="s">${esc(mLabel(mk))}</span></div>${top.length?`<div class="donut">${donut(top,eur0(-t.dep),"dépensés")}<div>${top.map(x=>`<div class="row" style="padding:5px 0;border:0"><span class="bar4" style="background:${x.color};min-height:14px"></span><div class="t"><b style="font-weight:500;font-size:13px">${esc(x.label)}</b></div><span class="a" style="font-size:13px">${eur0(x.v)}</span><span class="muted num" style="font-size:12px;min-width:44px;text-align:right">${Math.round(x.v/top.reduce((a,y)=>a+y.v,0)*100)} %</span></div>`).join("")}</div></div>`:'<p class="muted">Aucune dépense ce mois-ci.</p>'}</section>`;
   h+=G.evo;
+  h+=vEconomies();
   h+=vLeaks(mk);
   return h;
 }
@@ -2330,6 +2340,7 @@ function renderLogin(msg){
 function renderEmpty(){
   $("#root").innerHTML=`<div class="login"><div class="logo">€</div><h1>Bienvenue</h1><p class="muted">Ton espace est vide. Importe le fichier <b>historique.json</b> préparé avec Claude pour retrouver tout ton historique depuis janvier.</p><label class="btn pri" for="jsonFile0" style="display:inline-flex;align-items:center;margin-top:14px">Importer historique.json</label><input type="file" id="jsonFile0" accept=".json,application/json" hidden>${state.confirm==="restore"?`<div class="banner" style="margin-top:12px"><div class="grow">Fichier prêt : ${esc(state.pendingInfo||"")}</div><button class="btn sm pri" data-act="restore-ok">Importer</button></div>`:""}</div>`;
 }
+const isStopped=(r,now)=>!r.once&&!!r.end&&r.end<(now||nowMk())&&kindOf(r.cat)==="dep"&&(!!r.stopped||r.cat==="abo");
 function entFix(){
   const s=S(); if(!s||!s.cats) return;
   let cc=false; const add=(id,name,color,subs)=>{ if(!s.cats.find(c=>c.id===id)){ const at=s.cats.findIndex(c=>c.kind==="cre"); s.cats.splice(at<0?s.cats.length:at,0,{id,name,kind:"ent",color,subs}); cc=true; } };
@@ -2341,6 +2352,7 @@ function entFix(){
   const mp=o=>{ if(o.cat!=="rev") return null; if(o.sub==="Gains FDJ") return {cat:"ent_gain",sub:"Gains FDJ et jeux"}; if(o.sub==="Autres revenus") return /INTEREST|SAVEBACK/i.test(o.label||"")?{cat:"ent_int",sub:"Saveback, dividendes"}:{cat:"ent_aut",sub:"Autre entrée"}; return null; };
   for(const mk of allMonths()){ let c=false; for(const o of opsOf(mk)){ const m=mp(o); if(m){ o.cat=m.cat; o.sub=m.sub; c=true; } } if(c) Store.saveMonth(mk); }
   for(const r of (s.recurring||[])){ const m=mp(r); if(m){ r.cat=m.cat; r.sub=m.sub; cc=true; } }
+  if(!s.prefs.ccbillDone&&!(s.recurring||[]).some(r=>/CCBILL/i.test((r.label||"")+" "+(r.match||"")))){ const abo=s.cats.find(c=>c.id==="abo"); (s.recurring=s.recurring||[]).push({id:"ccbill",label:"CCBill com Lib Reno",amt:-31.29,cat:"abo",sub:abo&&abo.subs.includes("Autres")?"Autres":((abo&&abo.subs[0])||""),day:24,start:"2026-07",end:"2026-10",stopped:true,card:true,acc:"cc",match:"CCBILL"}); s.prefs.ccbillDone=true; cc=true; }
   if(cc) Store.saveSettings();
 }
 function render(){
