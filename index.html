@@ -445,14 +445,15 @@ function cardRecWin(md){ const from=addM(md,-1)+"-20", to=md+"-19", out=[]; for(
 function cardSettled(mk){ return opsOf(mk).some(o=>o.sub==="Règlement carte"&&Number(o.d.slice(8))>=24); }
 const GROUPS={ess:"Essentiel",non:"Non essentiel",det:"Dettes",epa:"Épargne & investissement"};
 const GCOL={ess:"#7CA8FF",non:"#FFB86B",det:"#FF7A6B",epa:"#5EEAD4"};
-const DEF_ESS=["imp/*","log/*","sup/*","coi/*","ali/Supermarché","ali/Hygiène & entretien","ali/Coiffeur","ste/Scolarité","ath/Scolarité","ass/*","abo/Téléphone","san/*","ban/*","div/Imprévus"];
+const DEF_ESS=["log/*","sup/*","coi/*","ali/Supermarché","ali/Hygiène & entretien","ali/Coiffeur","ste/Scolarité","ath/Scolarité","ass/*","abo/Téléphone","san/*","ban/*","div/Imprévus"];
 function groupOf(cat,sub){
   const k=kindOf(cat); if(k==="cre") return "det"; if(k==="epa") return "epa"; if(k!=="dep") return null;
+  if(cat==="imp") return "imp";
   const gm=S().groupMap||{}; if(gm[cat+"/"+sub]) return gm[cat+"/"+sub];
   return (DEF_ESS.includes(cat+"/"+sub)||DEF_ESS.includes(cat+"/*"))?"ess":"non";
 }
 function groupTotals(mk){
-  const g={rev:0,ess:0,non:0,det:0,epa:0};
+  const g={rev:0,ess:0,non:0,det:0,epa:0,imp:0};
   for(const o of budgetOps(mk)){ const k=kindOf(o.cat);
     if(k==="rev"){ g.rev+=o.amt; continue; }
     if(k==="cre"){ if(o.amt<0) g.det-=o.amt; continue; }
@@ -462,7 +463,7 @@ function groupTotals(mk){
 }
 // Plafonds par groupe : clé "ess:ali" = la partie Essentiel de la catégorie Alimentation (charges fixes comprises)
 // ---- plafonds : clé "ess:ali" (catégorie dans un groupe) ou "ess:ali/Supermarché" (sous-catégorie)
-function plafKeyOf(cat,sub){ const lk=(S().plafLink||{})[cat+"/"+(sub||"")]; if(lk){ const i=lk.indexOf("/"); cat=lk.slice(0,i); sub=lk.slice(i+1); } const g=groupOf(cat,sub||""); if(g!=="ess"&&g!=="non") return null; const P=S().plafonds||{}; const k2=g+":"+cat+"/"+(sub||""); return (k2 in P)?k2:g+":"+cat; }
+function plafKeyOf(cat,sub){ const lk=(S().plafLink||{})[cat+"/"+(sub||"")]; if(lk){ const i=lk.indexOf("/"); cat=lk.slice(0,i); sub=lk.slice(i+1); } const g=groupOf(cat,sub||""); if(g==="imp") return "ess:imp"; if(g!=="ess"&&g!=="non") return null; const P=S().plafonds||{}; const k2=g+":"+cat+"/"+(sub||""); return (k2 in P)?k2:g+":"+cat; }
 function plafVal(raw,mk){
   if(raw==null) return null; if(typeof raw==="number") return raw;
   if(raw.auto) return alimAuto(mk).plafond;
@@ -493,15 +494,17 @@ function planGroups(mk){
   for(const o of budgetOps(mk)){ if(kindOf(o.cat)!=="dep") continue; const k=plafKeyOf(o.cat,o.sub); if(k){ const x=mkx(k); if(x) x.spent-=o.amt; } }
   for(const x of fixedPlan(mk,true).list){ if(x.paid||x.amt>=0||kindOf(x.r.cat)!=="dep") continue; const k=plafKeyOf(x.r.cat,x.r.sub); if(!k) continue; const y=mkx(k); if(!y) continue; y.fixTodo-=x.amt; y.todo.push(x); }
   const res={};
-  for(const g of ["ess","non"]){ const list=Object.values(out[g]).filter(x=>(x.plaf||0)>0||x.spent||x.fixTodo||x.auto||x.plaf===0&&false).sort((a,b)=>(b.plaf||0)-(a.plaf||0)||b.spent-a.spent);
-    res[g]={list,plaf:list.reduce((a,x)=>a+(x.plaf||0),0),spent:list.reduce((a,x)=>a+x.spent,0),todo:list.reduce((a,x)=>a+x.fixTodo,0),zero:Object.values(out[g]).filter(x=>!list.includes(x))}; }
+  const taxL=Object.values(out.ess).filter(x=>x.cat==="imp");
+  for(const g of ["ess","non"]){ const all=Object.values(out[g]).filter(x=>x.cat!=="imp"); const list=all.filter(x=>(x.plaf||0)>0||x.spent||x.fixTodo||x.auto||x.plaf===0&&false).sort((a,b)=>(b.plaf||0)-(a.plaf||0)||b.spent-a.spent);
+    res[g]={list,plaf:list.reduce((a,x)=>a+(x.plaf||0),0),spent:list.reduce((a,x)=>a+x.spent,0),todo:list.reduce((a,x)=>a+x.fixTodo,0),zero:all.filter(x=>!list.includes(x))}; }
+  res.tax={list:taxL,plaf:taxL.reduce((a,x)=>a+(x.plaf||0),0),spent:taxL.reduce((a,x)=>a+x.spent,0),todo:taxL.reduce((a,x)=>a+x.fixTodo,0)};
   let ds=debtState(mk===nowMk()?todayISO():mk+"-"+pad(lastDay(mk)));
   if(mk>nowMk()) ds=Object.assign({},ds,{payDone:0,capDone:0,intDone:0,pctM:0});
   else if(mk===nowMk()){ const real=-budgetOps(mk).filter(o=>o.cat==="cre"&&o.amt<0).reduce((a,o)=>a+o.amt,0); const r=Math.round(Math.max(0,Math.min(ds.pay,real))*100)/100; const k=ds.payDone>0?r/ds.payDone:0; ds=Object.assign({},ds,{payDone:r,capDone:ds.capDone*k,intDone:ds.intDone*k}); }
   res.det={plaf:ds.pay,spent:ds.payDone,todo:ds.pay-ds.payDone,ds};
   let epa=0; for(const o of budgetOps(mk)) if(kindOf(o.cat)==="epa") epa-=o.amt;
   res.epa={plaf:plafVal(P["epa"],mk)||0,spent:epa,todo:0};
-  res.total=res.ess.plaf+res.non.plaf+res.det.plaf+res.epa.plaf;
+  res.totalNet=res.ess.plaf+res.non.plaf+res.det.plaf+res.epa.plaf; res.total=res.totalNet+res.tax.plaf;
   return res;
 }
 // ---- commissions prévues
@@ -518,7 +521,7 @@ function projection(n,withProbable){
   const m0=nowMk(), cc=S().accounts.find(a=>a.id==="cc"), bal=cc?accBalance(cc)||0:0, netFixe=netFixeNow();
   const G0=planGroups(m0); let rest=0;
   for(const g of ["ess","non"]) for(const x of G0[g].list) rest+=Math.max(0,(x.plaf||0)-x.spent,x.fixTodo);
-  rest+=G0.det.todo+Math.max(0,G0.epa.plaf-G0.epa.spent);
+  rest+=G0.det.todo+Math.max(0,G0.epa.plaf-G0.epa.spent)+Math.max(0,(G0.tax.plaf||0)-G0.tax.spent,G0.tax.todo);
   // les achats carte du mois sont déjà dans "spent" mais pas encore débités : on les retire du solde
   let cardPending=0; if(!cardSettled(m0)) cardPending=-cardCycle(m0).val;
   const nd0=paieRecue(m0)?0:ndfDue(m0,true); let B=bal-cardPending-rest+(paieRecue(m0)?0:netFixe+commsOf(m0,withProbable)+nd0);
@@ -687,7 +690,7 @@ function banner(){
 }
 
 /* ---------- ACCUEIL : le compte courant ---------- */
-function groupUntil(mk,day){ const g={ess:0,non:0}, sub={};
+function groupUntil(mk,day){ const g={ess:0,non:0,imp:0}, sub={};
   for(const o of opsOf(mk)){ if(Number(o.d.slice(8))>day||kindOf(o.cat)!=="dep") continue; const gr=groupOf(o.cat,o.sub||""); g[gr]-=o.amt; if(gr==="non"){ const k=o.cat+"/"+(o.sub||""); sub[k]=(sub[k]||0)-o.amt; } }
   return {g,sub}; }
 function victory(){
@@ -805,10 +808,10 @@ function vHome(){
   if(soon.length) h+=`<section class="card" style="background:linear-gradient(135deg,rgba(255,184,107,.10),rgba(255,122,107,.06));border-color:rgba(255,184,107,.3)"><div class="ch"><h2>🎉 Bientôt</h2></div>${soon.map((x,i)=>`<div class="row"><div class="t"><b>${i?"🎯":"🎉"} ${i?esc(mLabel(x.mk)):"Dès "+esc(mn(x.mk))}</b><small style="white-space:normal">fin ${esc(x.txt)}</small></div><span class="a pos">+${eur0(x.tot)}/mois</span></div>`).join("")}</section>`;
   // 4. budget du mois (une seule ligne)
   { const B=budBilan(m0); const hc="var(--coral)", bc="#38BDF8";
-    if(B.salaire>0){ const over=B.diff<-0.5, p=Math.abs(B.diff)/B.salaire*100, pr=p>0&&p<1?"moins de 1":String(Math.round(p)), col=over?hc:bc, fill=Math.min(100,(B.spent+B.todo)/B.salaire*100);
+    if(B.recu>0){ const over=B.diff<-0.5, p=Math.abs(B.diff)/B.recu*100, pr=p>0&&p<1?"moins de 1":String(Math.round(p)), col=over?hc:bc, fill=Math.min(100,(B.spent+B.todo)/B.recu*100);
       h+=`<section class="card click" data-goto="budget" data-bm="${m0}"><div class="muted" style="font-size:12.5px">Budget de ${esc(mn(m0))}</div><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px"><b style="font-size:18px;color:${col}">${over?"Déjà dépassé de "+pr+" %":"Il te reste "+pr+" % de marge"}</b><span class="muted" style="font-size:18px">›</span></div>
       <div style="position:relative;height:10px;background:#1A2440;border-radius:9px;margin-top:12px;overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:${fill}%;background:${col};border-radius:9px"></i></div>
-      <div class="muted" style="font-size:11.5px;margin-top:8px">Revenus du mois − déjà dépensé − à venir</div></section>`; }
+      <div class="muted" style="font-size:11.5px;margin-top:8px">Reçu sur le compte − déjà dépensé − à venir</div></section>`; }
     else h+=`<section class="card click" data-goto="budget" data-bm="${m0}"><div class="muted" style="font-size:12.5px">Budget de ${esc(mn(m0))}</div><b style="font-size:15px">Revenus du mois pas encore connus</b></section>`; }
   // 3. dettes
   const ds=debtState(today);
@@ -1439,35 +1442,66 @@ function budBilan(mk){
   const salOps=budgetOps(mk).filter(o=>o.cat==="rev"&&/Salaire|Acompte|Primes/.test(o.sub||""));
   const salaire=salOps.length?salOps.reduce((a,o)=>a+o.amt,0):netFixe+commsOf(addM(mk,-1),false);
   const G=planGroups(mk), spent=G.ess.spent+G.non.spent+G.det.spent, todo=G.ess.todo+G.non.todo+G.det.todo;
-  return {G,salaire,est:!salOps.length,spent,todo,diff:salaire-spent-todo};
+  const T=G.tax, tax=(salOps.length&&T.spent>0)?T.spent:Math.max(T.plaf||0,T.spent), recu=salaire-tax;
+  return {G,salaire,tax,recu,est:!salOps.length,spent,todo,diff:recu-spent-todo};
+}
+function tgOf(){ return Object.assign({ess:50,non:30,det:20,epa:0},S().prefs.targets||{}); }
+function grpPcts(mk){
+  if(mk<(S().prefs.startMonth||"2026-01")) return null;
+  const B=budBilan(mk), G=B.G; if(!(B.recu>0)) return null;
+  const sid=G.det.spent+Math.max(0,G.epa.spent);
+  if(G.ess.spent+G.non.spent+sid<1) return null;
+  return {ess:G.ess.spent/B.recu*100,non:G.non.spent/B.recu*100,sid:sid/B.recu*100};
+}
+function tgInfo(mk,g,now){
+  const tg=tgOf(), step=Number(S().prefs.tgStep||5), ideal=Number(g==="sid"?tg.det:tg[g]), pp=grpPcts(addM(mk,-1)), prev=pp?pp[g]:null;
+  let tm=ideal; if(prev!=null){ if(g==="sid") tm=prev<ideal?Math.min(ideal,prev+step):ideal; else tm=prev>ideal?Math.max(ideal,prev-step):ideal; }
+  tm=Math.round(tm); const up=g==="sid", bad=up?now<tm:now>tm;
+  return {ideal,prev,tm,now,bad,up};
+}
+function tgtHtml(mk,g,col,now){
+  const I=tgInfo(mk,g,now), Sx=Math.max(I.now,I.tm,I.ideal,I.prev||0)*1.15||1, w=v=>Math.min(100,v/Sx*100), mn=mLabel(mk).split(" ")[0].toLowerCase();
+  return `<div style="margin:8px 0 4px"><div style="position:relative;height:10px;background:#1A2440;border-radius:6px"><i style="position:absolute;left:0;top:0;bottom:0;width:${w(I.now)}%;background:${col};border-radius:6px"></i><i style="position:absolute;left:${w(I.tm)}%;top:-4px;width:2px;height:18px;background:#38BDF8"></i><i style="position:absolute;left:${w(I.ideal)}%;top:-4px;width:2px;height:18px;background:#fff"></i></div>
+   <div class="muted" style="font-size:11.5px;display:flex;gap:12px;flex-wrap:wrap;margin-top:7px"><span>Mois dernier : <b>${I.prev==null?"…":Math.round(I.prev)+" %"}</b></span><span style="color:#38BDF8;font-weight:700">Cible de ${esc(mn)} : ${I.tm} %</span><span>Idéal : ${I.ideal} %</span></div>
+   <div class="row" style="padding:6px 0 0;border:0"><span class="muted" style="font-size:12.5px">En ${esc(mn)} jusqu'ici</span><b class="num" style="color:${I.bad?"var(--coral)":"#4ADE80"}">${Math.round(I.now)} %</b></div></div>`;
 }
 function vBudgetMonth(mk){
   const plan=fixedPlan(mk,true), netFixe=netFixeNow();
   const salOps=budgetOps(mk).filter(o=>o.cat==="rev"&&/Salaire|Acompte|Primes/.test(o.sub||""));
   const salaire=salOps.length?salOps.reduce((a,o)=>a+o.amt,0):netFixe+commsOf(addM(mk,-1),false);
   const G=planGroups(mk), tg=Object.assign({ess:50,non:30,det:20,epa:0},S().prefs.targets||{});
-  const marge=salaire-G.total, reel=salaire-(G.ess.spent+G.non.spent+G.det.spent); const pc=v=>salaire>0?Math.round(v/salaire*100):0;
-  const BB=budBilan(mk), tot=BB.spent+BB.todo, over=BB.diff<-0.5, pOv=salaire>0?Math.abs(BB.diff)/salaire*100:0, prOv=pOv>0&&pOv<1?"moins de 1":String(Math.round(pOv)), colB=over?"var(--coral)":"#38BDF8";
-  let h=`<section class="card"><div class="row"><div class="t"><b style="font-weight:400" class="muted">Déjà payé</b></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(BB.spent)}</span></div>
+  const BB=budBilan(mk), recu=BB.recu, tax=BB.tax;
+  const marge=recu-G.totalNet, reel=recu-(G.ess.spent+G.non.spent+G.det.spent); const pc=v=>recu>0?Math.round(v/recu*100):0;
+  let ytd=0; for(const m of allMonths()) if(m.slice(0,4)===mk.slice(0,4)&&m<=mk) ytd+=groupTotals(m).imp;
+  const baseHtml=`<section class="card"><div class="ch"><h2>Argent arrivé sur mon compte</h2><span class="s">base de tous les pourcentages</span></div>
+   <div class="row"><div class="t"><b style="font-weight:400" class="muted">Revenus avant impôt</b><small>${BB.est?"estimés : net fixe + commissions sûres":"paie reçue, commissions comprises"}</small></div><span class="a num" style="font-size:16px;font-weight:700">${eur0(salaire)}</span></div>
+   <div class="row"><div class="t"><b style="font-weight:400" class="muted">Impôt prélevé à la source</b></div><span class="a num neg" style="font-size:16px;font-weight:700">− ${eur0(tax)}</span></div>
+   <div class="row" style="border-top:1px solid var(--line)"><div class="t"><b>Reçu sur le compte</b></div><span class="a num" style="font-size:20px;font-weight:700;color:#38BDF8">${eur0(recu)}</span></div>
+   <p class="muted" style="font-size:12px;margin:6px 0 0">L'impôt n'est plus compté dans « Essentiel » : il est suivi ici.</p></section>
+   <section class="card"><div class="ch"><h2>Mes impôts</h2><span class="s">suivi à part, hors des 50 / 30 / 20</span></div>
+   <div class="row"><span class="muted">Ce mois</span><b class="num">${eur0(tax)}</b></div><div class="row"><span class="muted">Depuis janvier</span><b class="num">${eur0(ytd)}</b></div><div class="row"><span class="muted">Part de mes revenus avant impôt</span><b class="num">${salaire>0?Math.round(tax/salaire*100):0} %</b></div></section>`;
+  const tot=BB.spent+BB.todo, over=BB.diff<-0.5, pOv=recu>0?Math.abs(BB.diff)/recu*100:0, prOv=pOv>0&&pOv<1?"moins de 1":String(Math.round(pOv)), colB=over?"var(--coral)":"#38BDF8";
+  let h=baseHtml+`<section class="card"><div class="row"><div class="t"><b style="font-weight:400" class="muted">Déjà payé</b></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(BB.spent)}</span></div>
    <div class="row"><div class="t"><b style="font-weight:400" class="muted">Encore à venir</b><small style="white-space:normal;overflow:visible;text-overflow:clip">prévu ce mois-ci, mais pas encore parti de ton compte</small></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(BB.todo)}</span></div>
    <div class="row" style="border-top:1px solid var(--line)"><div class="t"><b>Total du mois</b></div><span class="a num" style="font-size:18px;font-weight:700;color:${over?"var(--coral)":"inherit"}">${eur0(tot)}</span></div>
-   <div class="row"><div class="t"><b style="font-weight:400" class="muted">Tes revenus</b><small>${BB.est?"estimés : net fixe + commissions sûres":"paie reçue, commissions comprises"}</small></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(salaire)}</span></div>
+   <div class="row"><div class="t"><b style="font-weight:400" class="muted">Reçu sur ton compte</b><small>${BB.est?"estimé : net fixe + commissions sûres, moins l'impôt":"paie reçue, impôt retiré"}</small></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(recu)}</span></div>
    <div class="row" style="border-top:1px solid var(--line)"><div class="t"><b style="color:${colB}">${over?"Dépassé de "+prOv+" %":"Marge de "+prOv+" %"}</b></div><span class="a num" style="font-size:20px;font-weight:700;color:${colB}">${eur0(Math.abs(BB.diff))}</span></div>
-   <div style="position:relative;height:10px;background:#1A2440;border-radius:9px;margin-top:6px;overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:${salaire>0?Math.min(100,tot/salaire*100):0}%;background:${colB};border-radius:9px"></i></div>
+   <div style="position:relative;height:10px;background:#1A2440;border-radius:9px;margin-top:6px;overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:${recu>0?Math.min(100,tot/recu*100):0}%;background:${colB};border-radius:9px"></i></div>
    ${BB.todo>0.5?`<div style="background:rgba(255,255,255,.04);border-radius:14px;padding:10px 12px;margin-top:12px"><div class="muted" style="font-size:12px;margin-bottom:4px">Les ${eur0(BB.todo)} à venir, bloc par bloc</div>${[["Essentiel",G.ess.todo],["Non essentiel",G.non.todo],["Dettes (crédits)",G.det.todo]].map(([l,v])=>`<div class="row" style="padding:3px 0"><span class="muted" style="font-size:13px">${l}</span><span class="num" style="font-size:13px">${eur0(v)}</span></div>`).join("")}</div>`:""}
-   <div class="row" style="border-top:1px solid var(--line);margin-top:12px"><div class="t"><b style="font-weight:400" class="muted">Plafonds utilisés</b><small>${eur0(BB.spent)} sur ${eur0(G.total)}</small></div><span class="a num" style="font-size:18px;font-weight:700;color:#38BDF8">${G.total>0?Math.round(BB.spent/G.total*100):0} %</span></div>
-   <p class="muted" style="font-size:12px;margin:6px 0 0">${marge<0?"Tes plafonds ("+eur0(G.total)+") dépassent tes revenus ("+eur0(salaire)+") de "+eur0(-marge)+".":"Tes plafonds ("+eur0(G.total)+") tiennent dans tes revenus ("+eur0(salaire)+")."}</p></section>`;
+   <div class="row" style="border-top:1px solid var(--line);margin-top:12px"><div class="t"><b style="font-weight:400" class="muted">Plafonds utilisés</b><small>${eur0(BB.spent)} sur ${eur0(G.totalNet)}</small></div><span class="a num" style="font-size:18px;font-weight:700;color:#38BDF8">${G.totalNet>0?Math.round(BB.spent/G.totalNet*100):0} %</span></div>
+   <p class="muted" style="font-size:12px;margin:6px 0 0">${marge<0?"Tes plafonds ("+eur0(G.totalNet)+") dépassent ce que tu reçois ("+eur0(recu)+") de "+eur0(-marge)+".":"Tes plafonds ("+eur0(G.totalNet)+") tiennent dans ce que tu reçois ("+eur0(recu)+")."}</p></section>`;
   h+=`<section class="kpis">
-   <div class="kpi"><small>Revenus pour ${esc(mLabel(mk).split(" ")[0].toLowerCase())}</small><b class="pos">${eur0(salaire)}</b><span>${salOps.length?"paie reçue, commissions comprises":"estimé : net fixe + commissions sûres"}</span></div>
-   <div class="kpi"><small>Total de mes plafonds</small><b>${eur0(G.total)}</b><span>charges fixes comprises${G.epa.plaf?" · dont "+eur0(G.epa.plaf)+" d'épargne":""}</span></div>
+   <div class="kpi"><small>Reçu pour ${esc(mLabel(mk).split(" ")[0].toLowerCase())}</small><b class="pos">${eur0(recu)}</b><span>${salOps.length?"paie reçue, impôt retiré":"estimé, impôt retiré"}</span></div>
+   <div class="kpi"><small>Total de mes plafonds</small><b>${eur0(G.totalNet)}</b><span>charges fixes comprises${G.epa.plaf?" · dont "+eur0(G.epa.plaf)+" d'épargne":""}</span></div>
    <div class="kpi"><small>Déjà dépensé</small><b>${eur0(G.ess.spent+G.non.spent+G.det.spent)}</b><span>essentiel + non essentiel + dettes</span></div>
-   <div class="kpi" style="grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><div><small>Budget : revenus − plafonds</small><span style="display:block">${marge<0?"tes plafonds dépassent tes revenus":"tes plafonds tiennent dans tes revenus"}</span></div><b class="num ${marge<0?"neg":"pos"}">${sgn(marge)}</b></div>
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><div><small>Réel : revenus − déjà dépensé</small><span style="display:block">${reel<0?"tu as déjà dépensé plus que ta paie":"tu as dépensé moins que ta paye"}</span></div><b class="num ${reel<0?"neg":"pos"}">${sgn(reel)}</b></div></div></section>`;
+   <div class="kpi" style="grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><div><small>Budget : reçu − plafonds</small><span style="display:block">${marge<0?"tes plafonds dépassent tes revenus":"tes plafonds tiennent dans tes revenus"}</span></div><b class="num ${marge<0?"neg":"pos"}">${sgn(marge)}</b></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><div><small>Réel : reçu − déjà dépensé</small><span style="display:block">${reel<0?"tu as déjà dépensé plus que ta paie":"tu as dépensé moins que ta paye"}</span></div><b class="num ${reel<0?"neg":"pos"}">${sgn(reel)}</b></div></div></section>`;
   { const mn=m=>mLabel(m).split(" ")[0].toLowerCase(), nx=addM(mk,1), GN=planGroups(nx), spn=GN.ess.spent+GN.non.spent;
     h=`<div style="margin:2px 2px 10px"><div style="font-size:19px;font-weight:700">Budget de ${esc(mLabel(mk).toLowerCase())}</div><div class="muted" style="font-size:12px">Carte : achats du 20 ${esc(mn(addM(mk,-1)))} au 19 ${esc(mn(mk))}. Le reste compte à sa date.</div></div>`+h;
     if(spn>0.5) h+=`<div class="card" style="border-color:rgba(124,168,255,.45);display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 14px"><span style="font-size:13.5px"><b>${esc(mn(nx).charAt(0).toUpperCase()+mn(nx).slice(1))}</b> est déjà entamé : <b class="num">${eur0(spn)}</b> <span class="muted">(achats carte depuis le 20)</span></span><button class="btn sm" data-act="goto-month" data-mk="${nx}">Voir</button></div>`; }
   for(const g of ["ess","non"]){ const X=G[g];
-    h+=`<section class="card"><div class="ch"><h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${GCOL[g]};margin-right:8px"></span>${GROUPS[g]}</h2><span class="s">plafonds ${eur0(X.plaf)} = ${pc(X.plaf)} % des revenus · cible ${tg[g]} %</span></div>
+    h+=`<section class="card"><div class="ch"><h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${GCOL[g]};margin-right:8px"></span>${GROUPS[g]}</h2><span class="s">plafonds ${eur0(X.plaf)} = ${pc(X.plaf)} % de ce que tu reçois</span></div>
+     ${tgtHtml(mk,g,GCOL[g],recu>0?X.spent/recu*100:0)}
      <div style="display:flex;justify-content:space-between;font-size:13px" class="num"><span>${eur0(X.spent)} dépensés</span><span class="muted">${X.plaf-X.spent>=0?"reste "+eur0(X.plaf-X.spent):"dépassé de "+eur0(X.spent-X.plaf)}</span></div>${bar(X.plaf?X.spent/X.plaf:(X.spent>0?2:0))}
      ${tilesHtml(mk,g,X)}
      ${X.zero.length?`<p class="muted" style="font-size:12px;margin:8px 0 0">À 0 € ce mois-ci : ${esc(X.zero.map(x=>keyLabel(x.key)).join(", "))}</p>`:""}
@@ -1476,12 +1510,17 @@ function vBudgetMonth(mk){
   // dettes
   const D=G.det, ds=D.ds; const rows=[]; for(const c of (S().credits||[])) for(const x of crPaysIn(c,mk)) rows.push({c,x}); rows.sort((a,b)=>a.x.d.localeCompare(b.x.d));
   const today=todayISO();
-  h+=`<section class="card"><div class="ch"><h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${GCOL.det};margin-right:8px"></span>Dettes</h2><span class="s">mensualités ${eur0(D.plaf)} = ${pc(D.plaf)} % des revenus · cible ${tg.det} %</span></div>
+  { const sidV=D.spent+Math.max(0,G.epa.spent), sidNow=recu>0?sidV/recu*100:0, goal=Math.round(recu*tg.det/100), missing=Math.max(0,goal-sidV);
+    h+=`<section class="card"><div class="ch"><h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${GCOL.epa};margin-right:8px"></span>Épargne, investissement et dette</h2><span class="s">idéal ${tg.det} % de ce que tu reçois</span></div>
+     ${tgtHtml(mk,"sid",GCOL.epa,sidNow)}
+     <div class="row" style="border-top:1px solid var(--line);margin-top:6px"><span class="muted" style="font-size:13px">Déjà mis ce mois-ci</span><b class="num">${eur0(sidV)}</b></div>
+     <div class="row"><span class="muted" style="font-size:13px">Pour atteindre les ${tg.det} %</span><b class="num">${missing>0?"encore "+eur0(missing):"atteint ✓"}</b></div></section>`; }
+  h+=`<section class="card"><div class="ch"><h2>Dette</h2><span class="s">mensualités ${eur0(D.plaf)} = ${pc(D.plaf)} % de ce que tu reçois</span></div>
    <div style="display:flex;justify-content:space-between;font-size:13px" class="num"><span>${eur0(D.spent)} payés</span><span class="muted">${eur0(D.todo)} à venir</span></div>${bar(D.plaf?D.spent/D.plaf:0)}
    <div class="muted" style="font-size:12.5px;margin-top:6px">dont ${eur(ds.cap)} de capital et ${eur(ds.int)} d'intérêts</div>
    <details class="more"><summary>Voir les ${rows.length} échéances</summary>${rows.map(({c,x})=>`<div class="row"><div class="t"><b>${esc(c.name)}${x.d>today?'<span class="tag todo">prévu</span>':'<span class="tag okk">passé</span>'}</b><small style="white-space:normal">le ${esc(dFr(x.d))} · capital ${eur(x.cap)} · intérêts ${eur(x.int)}</small></div><span class="a">${eur(x.pay)}</span></div>`).join("")}</details></section>`;
   const E=G.epa;
-  h+=`<section class="card"><div class="ch"><h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${GCOL.epa};margin-right:8px"></span>Épargne & enveloppes</h2><span class="s">cible ${tg.epa} %</span></div>
+  h+=`<section class="card"><div class="ch"><h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${GCOL.epa};margin-right:8px"></span>Épargne et investissement</h2><span class="s">${pc(Math.max(0,E.spent))} % de ce que tu reçois</span></div>
    <div class="gauge sub" style="border:0;padding-top:0"><div class="h"><b>Objectif du mois</b><span class="lim">montant <input data-plafond="epa" inputmode="decimal" value="${E.plaf?String(E.plaf).replace(".",","):""}" placeholder="0" aria-label="Objectif d'épargne"> €</span></div>
    ${bar(E.plaf?Math.max(0,E.spent)/E.plaf:0)}<div class="f"><span class="num">${E.spent>=0?eur(E.spent)+" mis de côté":eur(-E.spent)+" repris sur l'épargne"}</span><span>${(S().envelopes||[]).filter(e=>e.monthly>0).map(e=>esc(e.name)+" "+eur0(e.monthly)).join(" · ")}</span></div></div></section>`;
   if(mk===nowMk()) h+=`<p class="muted" style="font-size:12.5px;margin:0 0 10px">Le budget se lit ici. Pour pointer un achat ou un prélèvement : <a href="#" data-act="to-pointer" style="color:var(--mint)">Opérations › À pointer</a>.</p>`;
@@ -1974,22 +2013,22 @@ function grpList(mk,k,fut){
 }
 function vGroups(mk,start){
   const g=groupTotals(mk), tg=Object.assign({ess:50,non:30,det:20,epa:0},S().prefs.targets||{});
-  const R=g.rev;
+  const R=g.rev-g.imp;
   // prévisionnel : prélèvements fixes du mois pas encore passés (Etalis, Franfinance, abonnements…)
-  const fut={ess:0,non:0,det:0,epa:0}, futL={ess:[],non:[],det:[],epa:[]}; let nFut=0;
+  const fut={ess:0,non:0,det:0,epa:0,imp:0}, futL={ess:[],non:[],det:[],epa:[],imp:[]}; let nFut=0;
   if(mk>=nowMk()) for(const x of recStatus(mk)){ if(x.paid||x.amt>=0) continue; const k=kindOf(x.r.cat);
-    const gr=k==="cre"?"det":k==="epa"?"epa":k==="dep"?groupOf(x.r.cat,x.r.sub||""):null; if(gr){ fut[gr]-=x.amt; futL[gr].push(x); nFut++; } }
+    const gr=k==="cre"?"det":k==="epa"?"epa":k==="dep"?groupOf(x.r.cat,x.r.sub||""):null; if(gr&&gr!=="imp"){ fut[gr]-=x.amt; futL[gr].push(x); nFut++; } }
   const tip=k=>futL[k].length?"À venir ce mois-ci :\n"+futL[k].map(x=>"• "+x.r.label+" : "+eur(-x.amt)+" le "+dFr(x.date)).join("\n")+"\nTotal : "+eur(fut[k]):"Rien d'autre de prévu ce mois-ci";
   const tipAll="À venir ce mois-ci : "+eur(Object.values(fut).reduce((a,v)=>a+v,0))+"\n"+["ess","non","det","epa"].filter(k=>fut[k]).map(k=>"• "+GROUPS[k]+" : "+eur(fut[k])).join("\n");
   const hasFut=nFut>0;
-  const rows=["ess","non","det","epa"].map(k=>{ const v=k==="epa"?Math.max(0,g.epa):g[k]; const vt=v+fut[k]; return {k,v,vt,pc:R>0?v/R*100:0,pt:R>0?vt/R*100:0,t:Number(tg[k]||0)}; });
+  const rows=["ess","non","det","epa"].map(k=>{ const v=k==="epa"?Math.max(0,g.epa):g[k]; const vt=v+fut[k]; return {k,v,vt,pc:R>0?v/R*100:0,pt:R>0?vt/R*100:0,t:(k==="ess"||k==="non")?Number(tg[k]||0):0}; });
   const used=rows.reduce((a,r)=>a+r.v,0), usedT=rows.reduce((a,r)=>a+r.vt,0);
   const bad=(k,pc,t)=>(k==="ess"||k==="non")?pc>t:pc<t;
-  let h=`<section class="card"><div class="ch"><h2>Répartition de mes sorties</h2><span class="s">en % des ${eur0(R)} reçus pour ${esc(mLabel(mk).toLowerCase())} · cible ${tg.ess}/${tg.non}/${tg.det}/${tg.epa}</span></div>
+  let h=`<section class="card"><div class="ch"><h2>Répartition de mes sorties</h2><span class="s">en % des ${eur0(R)} reçus pour ${esc(mLabel(mk).toLowerCase())} · cible ${tg.ess}/${tg.non}/${tg.det}, impôts à part</span></div>
    ${hasFut?`<p class="muted" style="font-size:12.5px;margin:0 0 8px">Barre pleine : à date. Partie hachurée : prélèvements encore à passer ce mois-ci (${nFut}). Survole une barre pour le détail, clique sur un groupe pour voir ses dépenses.</p>`:`<p class="muted" style="font-size:12.5px;margin:0 0 8px">Clique sur un groupe pour voir ses dépenses.</p>`}
    ${rows.map(r=>{ const pcs=hasFut?`à date <b style="color:${bad(r.k,r.pc,r.t)?"var(--coral)":"var(--mint)"}">${Math.round(r.pc)} %</b> · à terme <b style="color:${bad(r.k,r.pt,r.t)?"var(--coral)":"var(--mint)"}">${Math.round(r.pt)} %</b>`:`<b style="color:${bad(r.k,r.pc,r.t)?"var(--coral)":"var(--mint)"}">${Math.round(r.pc)} %</b>`;
      const open=state.grpOpen===r.k;
-     return `<div class="gauge" ${hasFut?`title="${esc(tip(r.k))}"`:""}><div class="h" data-act="grp-toggle" data-k="${r.k}" style="cursor:pointer" role="button" aria-expanded="${open}"><b><span style="display:inline-block;width:12px;color:var(--muted);font-size:11px">${open?"▾":"▸"}</span><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${GCOL[r.k]};margin-right:7px"></span>${GROUPS[r.k]}</b><span class="muted num" style="font-size:12px">cible ${r.t} %</span></div>
+     return `<div class="gauge" ${hasFut?`title="${esc(tip(r.k))}"`:""}><div class="h" data-act="grp-toggle" data-k="${r.k}" style="cursor:pointer" role="button" aria-expanded="${open}"><b><span style="display:inline-block;width:12px;color:var(--muted);font-size:11px">${open?"▾":"▸"}</span><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${GCOL[r.k]};margin-right:7px"></span>${GROUPS[r.k]}</b><span class="muted num" style="font-size:12px">${(r.k==="ess"||r.k==="non")?"cible "+r.t+" %":"compte dans les "+tg.det+" %"}</span></div>
      <div class="h" style="margin-top:2px"><span class="num" style="font-size:12.5px">${eur0(r.v)}${hasFut&&r.vt!==r.v?` → ${eur0(r.vt)}`:""}</span><span class="num" style="font-size:12.5px">${pcs}</span></div>
      <div class="track" style="position:relative;display:flex"><i style="width:${Math.min(100,r.pc)}%;background:${GCOL[r.k]};border-radius:6px 0 0 6px"></i>${hasFut&&r.pt>r.pc?`<i style="width:${Math.max(0,Math.min(100,r.pt)-Math.min(100,r.pc))}%;background:repeating-linear-gradient(45deg,${GCOL[r.k]} 0 3px,transparent 3px 6px);opacity:.8;border-radius:0"></i>`:""}<span style="position:absolute;top:-3px;left:calc(${Math.min(100,r.t)}% - 1px);width:2px;height:14px;background:var(--ink);opacity:.7"></span></div>${open?grpList(mk,r.k,futL[r.k]):""}</div>`; }).join("")}
    ${g.epa<0?`<p class="muted" style="font-size:12.5px;margin:8px 0 0">Ce mois-ci, tu as repris ${eur0(-g.epa)} sur ton épargne.</p>`:""}
@@ -2117,7 +2156,7 @@ function vAccounts(){
    <div class="kpi"><small>Patrimoine net</small><b class="${epa-totCrd<0?"neg":"pos"}">${sgn(epa-totCrd,eur0)}</b><span>épargne − crédits</span></div></section>`;
   const ea=state.editAcc?accs.find(a=>a.id===state.editAcc):null;
   h+=`<section class="card"><div class="ch"><h2>Comptes</h2><span class="s">mets à jour les soldes de temps en temps</span></div>
-   ${accs.map((a,ai)=>{ const b=accBalance(a); return ea&&ea.id===a.id?`<form class="form" id="accForm" data-id="${a.id}" style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="fld"><label for="a-name">Nom</label><input class="in" id="a-name" value="${esc(a.name)}"></div><div class="fld"><label for="a-bank">Banque</label><input class="in" id="a-bank" value="${esc(a.bank)}"></div><div class="fld"><label for="a-bal">Solde réel (€)</label><input class="in num" id="a-bal" inputmode="decimal" value="${a.balance==null?"":String(a.balance).replace(".",",")}"></div><div class="fld"><label for="a-date">À la date du</label><input class="in" type="date" id="a-date" value="${todayISO()}"><small class="muted" style="display:block;margin-top:4px;color:#38BDF8">La date est celle d'aujourd'hui. Mets la date de ton relevé si ce n'est pas aujourd'hui : l'appli ajoute ensuite les opérations faites après cette date.</small></div><button class="btn pri" type="submit">Enregistrer</button><button class="btn" type="button" data-act="cancel-acc">Annuler</button></form>`:
+   ${accs.map((a,ai)=>{ const b=accBalance(a); return ea&&ea.id===a.id?`<form class="form" id="accForm" data-id="${a.id}" style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="fld"><label for="a-name">Nom</label><input class="in" id="a-name" value="${esc(a.name)}"></div><div class="fld"><label for="a-bank">Banque</label><input class="in" id="a-bank" value="${esc(a.bank)}"></div>${a.type!=="courant"?`<div class="fld"><label for="a-type">Type de compte</label><select class="in" id="a-type"><option value="livret" ${a.type==="livret"?"selected":""}>Livret</option><option value="placement" ${a.type==="placement"?"selected":""}>Placement (assurance-vie, PER, compte titre)</option></select></div>`:""}<div class="fld"><label for="a-bal">Solde réel (€)</label><input class="in num" id="a-bal" inputmode="decimal" value="${a.balance==null?"":String(a.balance).replace(".",",")}"></div><div class="fld"><label for="a-date">À la date du</label><input class="in" type="date" id="a-date" value="${todayISO()}"><small class="muted" style="display:block;margin-top:4px;color:#38BDF8">La date est celle d'aujourd'hui. Mets la date de ton relevé si ce n'est pas aujourd'hui : l'appli ajoute ensuite les opérations faites après cette date.</small></div><button class="btn pri" type="submit">Enregistrer</button><button class="btn" type="button" data-act="cancel-acc">Annuler</button></form>`:
      `<div class="row"><span class="bar4" style="background:${a.type==="courant"?"#FF5C6C":a.type==="livret"?"#5EEAD4":"#A78BFA"}"></span><div class="t"><b>${esc(a.name)}</b><small>${esc(a.bank)} · ${a.type==="courant"?"compte courant":a.type==="livret"?"livret":"placement"}${a.balanceDate?(a.type==="courant"?" · solde réel du "+esc(dFr(a.balanceDate))+", à jour d'aujourd'hui":" · solde saisi le "+esc(dFr(a.balanceDate))):""}</small></div><span class="a ${b<0?"neg":""}">${b==null?"à renseigner":eur(b)}</span><button class="ibtn" data-act="acc-up" data-id="${a.id}" aria-label="Monter" ${ai===0?"disabled style=\"opacity:.25\"":""}>▲</button><button class="ibtn" data-act="acc-down" data-id="${a.id}" aria-label="Descendre" ${ai===accs.length-1?"disabled style=\"opacity:.25\"":""}>▼</button><button class="ibtn" data-act="edit-acc" data-id="${a.id}" aria-label="Modifier">${ICON.edit}</button></div>${fondsCtl(a)}`; }).join("")}
    <div class="toolbar" style="margin-top:10px"><button class="btn sm" data-act="add-acc">Ajouter un compte</button></div></section>`;
   const ec=state.editCredit?cr.find(c=>c.id===state.editCredit):null;
@@ -2168,7 +2207,7 @@ function vSettings(){
    <div class="fld"><label for="p-por">Prix par portion (€)</label><input class="in num" id="p-por" inputmode="decimal" value="${String(p.portion||5.5).replace(".",",")}"></div>
    <div class="fld"><label for="p-tr">Titres-restaurant par mois (€)</label><input class="in num" id="p-tr" inputmode="decimal" value="${p.titres!=null?p.titres:120}"></div>
    <div class="fld"><label for="p-cr">Commission : net / brut (%)</label><input class="in num" id="p-cr" inputmode="decimal" value="${Math.round(Number(p.commRatio||0.75)*100)}"></div>
-   ${(()=>{ const tg=Object.assign({ess:50,non:30,det:20,epa:0},p.targets||{}); return ["ess","non","det","epa"].map(k=>`<div class="fld"><label for="p-t-${k}">Cible ${GROUPS[k]} (%)</label><input class="in num" id="p-t-${k}" inputmode="decimal" value="${tg[k]}"></div>`).join(""); })()}
+   ${(()=>{ const tg=Object.assign({ess:50,non:30,det:20,epa:0},p.targets||{}); return [["ess","Essentiel"],["non","Non essentiel"],["det","Épargne, investissement et dette"]].map(([k,l])=>`<div class="fld"><label for="p-t-${k}">Cible idéale ${l} (%)</label><input class="in num" id="p-t-${k}" inputmode="decimal" value="${tg[k]}"></div>`).join("")+`<div class="fld"><label for="p-step">Pas de progression par mois (points)</label><input class="in num" id="p-step" inputmode="decimal" value="${p.tgStep!=null?p.tgStep:5}"></div>`; })()}
    <button class="btn pri" type="submit">Enregistrer</button></form></section>`;
   h+=vCatManager();
   h+=`<section class="card"><div class="ch"><h2>Importer des relevés</h2><span class="s">CSV Crédit Mutuel (compte ou carte), CSV ou PDF Trade Republic</span></div>
@@ -2542,7 +2581,7 @@ document.addEventListener("submit",e=>{
     const bl=$("#r-block").value; if(bl) r.block=bl; else delete r.block;
     S().recurring=[...S().recurring.filter(x=>x.id!==r.id),r]; saveSettings(); state.editRec=null; state.recNew=false; render(); toast("Récurrence enregistrée");
   }
-  if(f.id==="accForm"){ const a=S().accounts.find(x=>x.id===f.dataset.id); a.name=$("#a-name").value.trim()||a.name; a.bank=$("#a-bank").value.trim(); const b=$("#a-bal").value.trim(), oldB=a.balance, oldD=a.balanceDate; a.balance=b===""?null:parseAmt(b); const dv=$("#a-date").value||todayISO(), same=(oldB==null&&a.balance==null)||(oldB!=null&&a.balance===Number(oldB)); a.balanceDate=(same&&dv===todayISO()&&oldD)?oldD:dv; saveSettings(); state.editAcc=null; render(); toast("Compte mis à jour"); }
+  if(f.id==="accForm"){ const a=S().accounts.find(x=>x.id===f.dataset.id); a.name=$("#a-name").value.trim()||a.name; a.bank=$("#a-bank").value.trim(); { const ty=$("#a-type"); if(ty&&["livret","placement"].includes(ty.value)) a.type=ty.value; } const b=$("#a-bal").value.trim(), oldB=a.balance, oldD=a.balanceDate; a.balance=b===""?null:parseAmt(b); const dv=$("#a-date").value||todayISO(), same=(oldB==null&&a.balance==null)||(oldB!=null&&a.balance===Number(oldB)); a.balanceDate=(same&&dv===todayISO()&&oldD)?oldD:dv; saveSettings(); state.editAcc=null; render(); toast("Compte mis à jour"); }
   if(f.id==="crForm"){ const c=S().credits.find(x=>x.id===f.dataset.id); const today=todayISO(); const old=crdAt(c,today);
     c.name=$("#c-name").value.trim()||c.name; c.mens=parseAmt($("#c-mens").value)||c.mens;
     const rt=$("#c-rate").value.trim(); const nr=rt===""?null:parseAmt(rt); if(nr!==c.rate){ c.rate=nr; c.rateEst=false; }
@@ -2619,7 +2658,7 @@ document.addEventListener("submit",e=>{
     if(ex){ for(const k of ["brut","net"]) delete ex[k]; Object.assign(ex,rec); state.editPrime=null; } else L.push({id:uid(),...rec});
     saveSettings(); render(); toast(ex?"Prime modifiée":"Prime ajoutée sur la paie de "+mLabel(pm).split(" ")[0].toLowerCase()); return; }
   if(f.id==="commForm"){ const v=parseAmt($("#cm-brut").value); const pm=$("#cm-paie").value; if(!(v>0)||!pm){ toast("Indique le montant et la paie"); return; } const lab=$("#cm-label").value.trim()||"Commission", sure=$("#cm-sure").value==="1"; const ex=state.editComm?(S().commissions||[]).find(x=>x.id===state.editComm):null; if(ex){ ex.label=lab; ex.brut=v; delete ex.net; ex.paie=pm; ex.sure=sure; state.editComm=null; } else (S().commissions=S().commissions||[]).push({id:uid(),label:lab,brut:v,paie:pm,sure,recu:false}); saveSettings(); render(); toast(ex?"Commission modifiée":"Commission ajoutée"); return; }
-  if(f.id==="prefForm"){ const P=S().prefs; P.netFixeManual=parseAmt($("#p-net").value)||0; P.decouvert=parseAmt($("#p-dec").value)||0; P.matelas=parseAmt($("#p-mat").value)||0; P.portion=parseAmt($("#p-por").value)||5.5; P.titres=parseAmt($("#p-tr").value)||0; P.commRatio=(parseAmt($("#p-cr").value)||70)/100; S().prefs.targets={ess:parseAmt($("#p-t-ess").value)||0,non:parseAmt($("#p-t-non").value)||0,det:parseAmt($("#p-t-det").value)||0,epa:parseAmt($("#p-t-epa").value)||0}; saveSettings(); render(); toast("Repères enregistrés"); }
+  if(f.id==="prefForm"){ const P=S().prefs; P.netFixeManual=parseAmt($("#p-net").value)||0; P.decouvert=parseAmt($("#p-dec").value)||0; P.matelas=parseAmt($("#p-mat").value)||0; P.portion=parseAmt($("#p-por").value)||5.5; P.titres=parseAmt($("#p-tr").value)||0; P.commRatio=(parseAmt($("#p-cr").value)||70)/100; S().prefs.targets={ess:parseAmt($("#p-t-ess").value)||0,non:parseAmt($("#p-t-non").value)||0,det:parseAmt($("#p-t-det").value)||0,epa:0}; S().prefs.tgStep=parseAmt($("#p-step").value)||5; saveSettings(); render(); toast("Repères enregistrés"); }
 });
 
 /* =====================================================================
