@@ -590,7 +590,7 @@ function donut(segs,big,small){
    VUES
    ===================================================================== */
 function cardMk(o){ return isCardLate(o)?addM(mkOf(o.d),1):mkOf(o.d); }
-function cardState(o){ if(!(o.card&&o.amt<0)) return null; const cm=cardMk(o); if(cardSettled(cm)||o.debited) return "ok"; return (o.imported||o.bank)?"bank":"saisie"; }
+function cardState(o){ if(!o.card) return null; const cm=cardMk(o); if(cardSettled(cm)||o.debited) return "ok"; return (o.imported||o.bank)?"bank":"saisie"; }
 function ndfDue(mk,upTo){ let v=0; for(const m of allMonths()) for(const o of opsOf(m)) if(o.pro&&o.pro.status==="attente"){ const p=o.pro.paie||paieFor(o.d); if(upTo?p<=mk:p===mk) v+=Number(o.pro.remb||-o.amt); } return r2(v); }
 function recvOther(){ return r2(recvItems().filter(x=>x.act!=="ndf-recu").reduce((a,x)=>a+x.amt,0)); }
 function recvItems(){ const out=[];
@@ -1025,7 +1025,7 @@ function vOpsSaisir(){
    ${kind==="neu"?`<div class="fld"><label for="o-sign">Sens</label><select class="in" id="o-sign"><option value="-1" ${ed&&ed.amt>0?"":"selected"}>Sortie du compte</option><option value="1" ${ed&&ed.amt>0?"selected":""}>Entrée sur le compte</option></select></div>`:""}
    <div class="fld"><label for="o-note">Commentaire</label><input class="in" id="o-note" placeholder="Ex. transport Paris concert Céline Dion" value="${ed?esc(ed.note||""):""}"></div>
    <div class="fld" id="o-health-w" ${cat==="san"?"":"hidden"}><label for="o-health">Remboursement</label><select class="in" id="o-health"><option value="">Non remboursable</option><option value="avance" ${ed&&ed.health==="avance"?"selected":""}>Avance remboursable (neutre dans le budget)</option><option value="rembourse" ${ed&&ed.health==="rembourse"?"selected":""}>Remboursable (en attente)</option><option value="rembourse_ok" ${ed&&ed.health==="rembourse_ok"?"selected":""}>Remboursé</option></select></div>
-   <div class="fld"><label><input type="checkbox" id="o-card" ${(ed?ed.card:true)?"checked":""}> Payé par carte (débit fin de mois)</label><label><input type="checkbox" id="o-fixed" ${ed&&ed.fixed?"checked":""}> Charge fixe</label></div>
+   <div class="fld"><label><input type="checkbox" id="o-card" ${(ed?ed.card:kind==="dep")?"checked":""}> ${kind==="rev"?"Remboursé sur la carte : vient en déduction du débit de fin de mois":"Payé par carte (débit fin de mois)"}</label><label><input type="checkbox" id="o-fixed" ${ed&&ed.fixed?"checked":""}> Charge fixe</label></div>
    <div class="toolbar" style="grid-column:1/-1"><button class="btn pri" type="submit">${ed?"Enregistrer":"Ajouter"}</button>${ed?"":`<label class="btn" style="cursor:pointer">📎 Ticket (PDF ou photo)<input type="file" accept="application/pdf,image/*" id="ticketFile" hidden></label><label class="btn" style="cursor:pointer">📷 Scanner<input type="file" accept="image/*" capture="environment" id="scanFile" hidden></label>`}</div>
   </form></section>${state.ticketBusy?`<section class="card"><p class="muted" style="margin:0" id="busyTxt">⏳ ${esc(state.ticketBusy)}</p></section>`:""}${state.ocrDebug?`<section class="card"><div class="ch"><h2>Texte lu sur la photo</h2><button class="btn sm" data-act="ocr-close">Fermer</button></div><p class="muted" style="font-size:12px;margin:0 0 8px">Le total n'a pas été trouvé. Tu peux copier ce texte et me l'envoyer pour que j'améliore la lecture.</p><pre style="white-space:pre-wrap;font-size:11px;max-height:220px;overflow:auto;margin:0 0 8px;color:var(--muted)">${esc(state.ocrDebug)}</pre><button class="btn sm" data-act="ocr-copy">Copier le texte</button></section>`:""}${state.ticket?vTicket():""}`;
   return h;
@@ -1566,7 +1566,7 @@ function tilesHtml(mk,g,X){
 }
 function cycOpsAll(){ const m0=nowMk(), seen=new Set(), l=[]; for(const md of [m0,addM(m0,1)]) if(!cardSettled(md)) for(const o of cycleOps(md)) if(!seen.has(o.id)&&!(o.spl&&!o.splOrig)){ seen.add(o.id); l.push(o); } return l; }
 function cycleOps(md){ const from=addM(md,-1)+"-20", to=md+"-19"; const l=[];
-  for(const m of [addM(md,-1),md]) for(const o of opsOf(m)) if(o.card&&o.amt<0&&o.d>=from&&o.d<=to) l.push(o);
+  for(const m of [addM(md,-1),md]) for(const o of opsOf(m)) if(o.card&&o.d>=from&&o.d<=to) l.push(o);
   return l.sort((a,b)=>b.d.localeCompare(a.d)); }
 function vRecoBox(mk){
   let hRel=""; const mn=m=>mLabel(m).split(" ")[0].toLowerCase(), sttl=cardSettled(mk);
