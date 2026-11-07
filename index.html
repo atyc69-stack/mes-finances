@@ -1336,6 +1336,18 @@ function vPaies(){
   return h+`<p class="muted" style="font-size:12px;margin:10px 0 0">Total de chaque paie = commissions des contrats signés + primes + commissions saisies à la main. Le budget est celui du mois qui suit la paie.</p></section>`;
 }
 
+function dealStat(d){ const ls=d.lines||[]; if(!d.signed) return "ns"; return (ls.length&&ls.every(l=>l.mk))?"sp":"snp"; }
+function vContrats(){
+  const R=cRates(), M=m=>mLabel(m).split(" ")[0].toLowerCase(), F=state.dealF||"all", all=(S().deals||[]).slice();
+  const chips=[["all","Tous"],["sp","Signés, planifiés"],["snp","Signés, non planifiés"],["ns","Non signés"]];
+  const L=all.filter(d=>F==="all"||dealStat(d)===F);
+  const net=d=>(d.lines||[]).reduce((a,l)=>a+lineBrut(l)*R.net,0);
+  const info=d=>{ const ls=d.lines||[], mks=[...new Set(ls.filter(l=>l.mk).map(l=>linePaie(l)))].sort(); if(!ls.length) return "aucune ligne"; if(!d.signed) return mks.length&&ls.every(l=>l.mk)?"planifié · paie de "+mks.map(M).join(", "):"pas encore de mois"; return ls.every(l=>l.mk)?"planifié · paie de "+mks.map(M).join(", "):ls.some(l=>l.mk)?"en partie planifié":"pas encore de mois"; };
+  return `<section class="card"><div class="ch"><h2>Mes contrats</h2><span class="s">${all.length} contrat${all.length>1?"s":""}</span></div>
+   <div class="seg" role="tablist" style="margin-bottom:8px;flex-wrap:wrap">${chips.map(c=>`<button style="font-size:11.5px;padding:8px 6px" class="${F===c[0]?"on":""}" data-act="deal-f" data-v="${c[0]}">${c[1]}</button>`).join("")}</div>
+   ${L.length?L.map(d=>`<div class="row" style="padding:9px 0"><div class="t" style="white-space:normal"><b style="white-space:normal;font-size:14px">${esc(d.name)} <span class="tag ${d.signed?"okk":"todo"}">${d.signed?"Signé":"Non signé"}</span></b><small style="white-space:normal">${esc(info(d))}</small></div><span class="a pos" style="text-align:right;white-space:nowrap">${eur0(net(d))}</span><div style="display:flex;gap:4px"><button class="btn sm" style="height:30px;padding:0 9px;font-size:12.5px" data-act="dv-open" data-d="${d.id}">Ouvrir</button>${state.confirm==="deal-"+d.id?`<button class="confirm" data-act="deal-del" data-id="${d.id}">Supprimer ?</button>`:`<button class="ibtn" data-act="ask" data-key="deal-${d.id}" aria-label="Supprimer le contrat">${ICON.del}</button>`}</div></div>`).join(""):'<p class="muted" style="font-size:13px">Aucun contrat dans ce filtre.</p>'}
+   <p class="muted" style="font-size:12px;margin:8px 0 0">Supprimer un contrat enlève aussi ses lignes et ses commissions prévues. C'est définitif.</p></section>`;
+}
 const DV_SOFTS={"Rubis Santé":["GEF N1","GEF N2","PMT","HL7 ADT Identité"],"Rubis Brancardage":["HL7 ADT Identité","HL7 SIU RDV Bloc","HL7 SIU RDV Imagerie"],"Rubis Transporteur":[],"Rubis Urgences":[]};
 function dvMonthly(x){ const a=parseAmt(String(x.amt==null?"":x.amt))||0; return x.per==="a"?a/12:a; }
 function dvNew(){ const L=uid(); return {d:null,name:"",signed:true,items:[{id:L,kind:"lic",soft:"Rubis Santé",amt:"",per:"m",mk:""},{id:uid(),kind:"inst",parent:L,amt:"",mk:""},{id:uid(),kind:"form",parent:L,amt:"",mk:""}]}; }
@@ -1426,7 +1438,7 @@ function vCommissions(){
    <section class="card"><div class="ch"><h2>Contrats à signer</h2><span class="s">probable</span></div><div style="font-size:20px;font-weight:700" class="num">+ ${n(prob)} <small style="font-size:12.5px;font-weight:400;color:var(--muted)">net · ${eur0(prob)} brut</small></div></section>`;
   { const np=L.filter(x=>x.d.signed&&!x.l.mk); if(np.length) h+=`<section class="card" style="border-color:rgba(255,184,107,.45)"><b style="font-size:14px;color:var(--amber)">Signé, mais pas encore prévu sur un mois</b>${np.map(x=>`<div class="row" style="padding:8px 0"><div class="t" style="white-space:normal"><b style="white-space:normal;font-size:14px">${esc(x.d.name)}${x.l.what&&x.l.what!=="Facturation"?" · "+esc(x.l.what):""}</b><small>facturé : mois à choisir</small></div><button class="btn sm" data-act="dv-open" data-d="${x.d.id}">Choisir le mois</button></div>`).join("")}</section>`; }
   h=vDevis()+h;
-  h+=vPaies()+vPrimes();
+  h+=vPaies()+vContrats()+vPrimes();
   h+=`<section class="card"><div class="ch"><h2>Mes règles de calcul</h2></div><form class="form" id="ruleForm" autocomplete="off"><div class="fld"><label>Taux sur la licence (%)</label><input class="in num" id="rl-lic" inputmode="decimal" value="${Math.round(R.lr*100)}"></div><div class="fld"><label>Mois de licence payés</label><input class="in num" id="rl-lm" inputmode="decimal" value="${R.lm}"></div><div class="fld"><label>Taux sur le one shot (%)</label><input class="in num" id="rl-os" inputmode="decimal" value="${String(R.os*100).replace(".",",")}"></div><div class="fld"><label>Décalage de paie (mois)</label><input class="in num" id="rl-lag" inputmode="numeric" value="${R.lag}"></div><div class="fld"><label>Net en % du brut</label><input class="in num" id="rl-net" inputmode="decimal" value="${Math.round(R.net*100)}"></div><button class="btn pri" type="submit">Enregistrer les règles</button></form>
    <p class="muted" style="font-size:12px;margin:8px 0 0">Un coût annuel est divisé par 12. Facturé en novembre avec un décalage de 1 : versé sur la paie de décembre.</p></section>
    <section class="card"><div class="ch"><h2>Importer mes contrats</h2><span class="s">fichier gardé chez toi</span></div><p class="muted" style="font-size:12.5px;margin:0 0 8px">Choisis le fichier « contrats_commissions.json ». Les contrats déjà présents (même identifiant) sont remplacés, les autres sont gardés.</p><input type="file" id="dealFile" accept=".json,application/json" class="in" style="padding:8px"></section>`;
@@ -2447,6 +2459,7 @@ document.addEventListener("click",e=>{
     case "pdf-apply": { const p=state.pdfBal, a=S().accounts.find(x=>x.id==="tr"); if(!p||p.courant==null) break; if(!a){ toast("Compte « Compte espèces » introuvable"); break; } a.balance=p.courant; a.balanceDate=p.to; saveSettings(); state.pdfBal=null; render(); toast(a.name+" : "+eur(p.courant)+" au "+dFr(p.to)); break; }
     case "pdf-cancel": state.pdfBal=null; render(); break;
     case "dv-new": state.dv=dvNew(); state.dvPick=null; render(); setTimeout(()=>{ const c=$("#dvCard"); if(c) c.scrollIntoView({block:"start"}); },50); break;
+    case "deal-f": state.dealF=t.dataset.v; render(); break;
     case "dv-open": { const v=dvOpen(t.dataset.d); if(v){ state.dv=v; state.dvPick=null; render(); setTimeout(()=>{ const c=$("#dvCard"); if(c) c.scrollIntoView({block:"start"}); },50); } break; }
     case "dv-detail": state.dv.detail=true; render(); break;
     case "dv-cancel": state.dv=null; state.dvPick=null; render(); break;
