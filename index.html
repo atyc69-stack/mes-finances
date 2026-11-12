@@ -411,7 +411,8 @@ function fixeAuto(){
   return Math.round(ok.reduce((a,x)=>a+x.s,0)/ok.length);
 }
 function netFixeNow(){ const m=Number(S().prefs.netFixeManual||0); if(m>0) return m; const a=fixeAuto(); return a!=null?a:Number(S().prefs.netFixe||0); }
-function recAmount(r,mk){ if(r.id==="salairefixesyn30"){ const n=netFixeNow(); if(n>0) return n; } if(r.ov&&r.ov[mk]!=null) return Number(r.ov[mk]); return (r.end===mk && r.lastAmt!=null) ? r.lastAmt : r.amt; }
+function recAmount(r,mk){ if(r.id==="salairefixesyn30"){ const n=netFixeNow(); if(n>0) return n; } if(r.ov&&r.ov[mk]!=null) return Number(r.ov[mk]);
+  if(r.chg&&r.chg.length){ let a=null; for(const c of r.chg.slice().sort((x,y)=>x.from.localeCompare(y.from))) if(c.from<=mk) a=Number(c.amt); if(a!=null&&!(r.end===mk&&r.lastAmt!=null)) return a; } return (r.end===mk && r.lastAmt!=null) ? r.lastAmt : r.amt; }
 function recStatus(mk,budget){
   const used=new Set(); const out=[];
   const ops=budget?budgetOps(mk):opsOf(mk);
@@ -1789,7 +1790,7 @@ function vRepartition(amt){
   return `<section class="card"><div class="ch"><h2>Où va chaque commission en plus ?</h2><span class="s">l'ordre décidé ensemble</span></div>${steps.map(s=>`<div class="row"><div class="t"><b>${esc(s[0])}</b><small style="white-space:normal">${esc(s[1])}</small></div></div>`).join("")}</section>`;
 }
 function recRow(r,sub){ const key="rec|"+r.id; const per=r.once?"le "+r.day+" "+mLabel(r.once).toLowerCase():r.months&&r.months.length?"mois scolaires · le "+r.day:"chaque mois · le "+r.day; const longEnd=r.end&&r.end>addM(nowMk(),12); const fin=r.end?" · jusqu'en "+mLabel(r.end).toLowerCase():"";
-     return `<div class="row"${sub?' style="padding-left:14px"':''}><span class="bar4" style="background:${catColor(r.cat)}"></span><div class="t"><b>${esc(r.label)}${r.end&&r.end<nowMk()?'<span class="tag">terminé</span>':""}</b><small>${esc(catName(r.cat))} · ${esc(r.sub||"")} · ${esc(per)}${longEnd?`<span style="color:var(--amber)">${esc(fin)} *</span>`:esc(fin)}</small></div><span class="a ${r.amt>0?"pos":""}">${sgn(r.id==="salairefixesyn30"?recAmount(r,nowMk()):r.amt)}</span>
+     return `<div class="row"${sub?' style="padding-left:14px"':''}><span class="bar4" style="background:${catColor(r.cat)}"></span><div class="t"><b>${esc(r.label)}${r.end&&r.end<nowMk()?'<span class="tag">terminé</span>':""}</b><small>${esc(catName(r.cat))} · ${esc(r.sub||"")} · ${esc(per)}${longEnd?`<span style="color:var(--amber)">${esc(fin)} *</span>`:esc(fin)}</small></div><span class="a ${r.amt>0?"pos":""}">${sgn(r.id==="salairefixesyn30"||(r.chg&&r.chg.length)?recAmount(r,nowMk()):r.amt)}</span>${r.chg&&r.chg.length&&recAmount(r,nowMk())!==r.amt?`<span class="tag" style="margin-left:4px">moins cher</span>`:""}
      ${state.confirm===key?`<button class="confirm" data-act="del-rec" data-id="${r.id}">Supprimer ?</button>`:`<button class="ibtn" data-act="edit-rec" data-id="${r.id}" aria-label="Modifier">${ICON.edit}</button><button class="ibtn" data-act="ask" data-key="${key}" aria-label="Supprimer">${ICON.del}</button>`}</div>`; }
 function recGroups(recs){ // regroupe les lignes d'un même organisme (« Etalis – … », « Passeport – … ») quand il y en a 2 ou plus
   const by={}; for(const r of recs){ const p=(r.label.split(" – ")[1]!==undefined)?r.label.split(" – ")[0]:null; if(p){ (by[p]=by[p]||[]).push(r); } }
@@ -1814,6 +1815,7 @@ function vRecurring(mk){
    <div class="fld"><label for="r-sub">Sous-catégorie</label><select class="in" id="r-sub">${subOptions(ed?ed.cat:"log",ed?ed.sub:"")}</select></div>
    <div class="fld"><label for="r-day">Jour du mois</label><input class="in num" id="r-day" type="number" min="1" max="31" value="${ed?ed.day:5}"></div>
    <div class="fld"><label for="r-start">À partir de</label><input class="in" id="r-start" type="month" value="${ed?(ed.once||ed.start||""):nowMk()}"></div>
+   <div class="fld" style="grid-column:1/-1;border:1px solid rgba(56,189,248,.45);border-radius:14px;padding:10px 12px"><b style="color:#38BDF8;font-size:13px">Le prix change</b><div class="muted" style="font-size:12px;margin-bottom:6px">tu gardes l'abonnement, mais à un autre prix</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label for="r-chg-amt" style="font-size:12px">Nouveau montant par mois (€)</label><input class="in num" id="r-chg-amt" inputmode="decimal" placeholder="8,00" value="${ed&&ed.chg&&ed.chg[0]?String(Math.abs(ed.chg[0].amt)).replace(".",","):""}"></div><div><label for="r-chg-from" style="font-size:12px">À partir de</label><input class="in" id="r-chg-from" type="month" value="${ed&&ed.chg&&ed.chg[0]?ed.chg[0].from:""}"></div></div></div>
    <div class="fld" style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="r-stopped" ${ed&&ed.stopped?"checked":""}> <b>Abonnement arrêté</b> <span class="muted" style="font-size:12px">je l'ai résilié, plus aucun prélèvement</span></label></div>
    <div class="fld"><label for="r-end">Dernier mois prélevé (ou « jusqu'à », facultatif)</label><input class="in" id="r-end" type="month" value="${ed?(ed.end||""):""}"></div>
    <div class="fld"><label for="r-stopdate">Arrêté le (facultatif)</label><input class="in" id="r-stopdate" type="date" value="${ed&&ed.stopDate?ed.stopDate:""}"></div>
@@ -1844,13 +1846,18 @@ function vRecurring(mk){
   return h;
 }
 function vEconomies(){
-  const now=nowMk(), SP=(S().recurring||[]).filter(r=>isStopped(r,now)).sort((a,b)=>b.end.localeCompare(a.end)); if(!SP.length) return "";
-  const mon=SP.reduce((a,r)=>a-r.amt,0); let saved=0; for(const r of SP){ let m=addM(r.end,1), n=0; while(m<=now){ n++; m=addM(m,1); } saved+=n*(-r.amt); }
-  return `<section class="card"><div class="ch"><h2>Mes économies</h2><span class="s">les abonnements que j'ai arrêtés</span></div>
+  const now=nowMk(), SP=(S().recurring||[]).filter(r=>isStopped(r,now)).sort((a,b)=>b.end.localeCompare(a.end));
+  const CH=(S().recurring||[]).filter(r=>!r.once&&!r.stopped&&r.chg&&r.chg[0]&&kindOf(r.cat)==="dep"&&Math.abs(Number(r.chg[0].amt))<Math.abs(r.amt)&&r.chg[0].from<=now);
+  if(!SP.length&&!CH.length) return "";
+  const dif=r=>Math.abs(r.amt)-Math.abs(Number(r.chg[0].amt));
+  const mon=SP.reduce((a,r)=>a-r.amt,0)+CH.reduce((a,r)=>a+dif(r),0); let saved=0; for(const r of SP){ let m=addM(r.end,1), n=0; while(m<=now){ n++; m=addM(m,1); } saved+=n*(-r.amt); }
+  for(const r of CH){ let m=r.chg[0].from, n=0; while(m<=now){ n++; m=addM(m,1); } saved+=n*dif(r); }
+  return `<section class="card"><div class="ch"><h2>Mes économies</h2><span class="s">abonnements arrêtés ou moins chers</span></div>
    <div class="num" style="font-size:26px;font-weight:700;margin:4px 0 0;color:var(--mint)">${eur0(mon*12)} <span style="font-size:14px;font-weight:500">par an</span></div><div class="muted" style="font-size:12.5px">soit ${eur(mon)} par mois</div>
    <div class="row" style="margin-top:10px"><span>Déjà économisé depuis les arrêts</span><b class="num" style="color:#38BDF8">${eur(saved)}</b></div>
-   ${SP.map(r=>`<div class="row"><div class="t" style="white-space:normal"><b style="white-space:normal">${esc(r.label)}</b><small style="white-space:normal">dernier prélèvement : ${esc(mLabel(r.end).toLowerCase())}</small></div><div style="text-align:right"><b class="num pos">${eur(-r.amt)} / mois</b><div class="muted" style="font-size:12px">${eur0(-r.amt*12)} / an</div></div></div>`).join("")}
-   <p class="muted" style="font-size:12px;margin:6px 0 0">Chaque nouvel arrêt s'ajoute ici tout seul. Le détail se modifie dans Budget, Récurrent, Arrêtés.</p></section>`;
+   ${CH.map(r=>`<div class="row"><div class="t" style="white-space:normal"><b style="white-space:normal">${esc(r.label)} <span class="tag">moins cher</span></b><small style="white-space:normal">de ${eur(Math.abs(r.amt))} à ${eur(Math.abs(Number(r.chg[0].amt)))} · depuis ${esc(mLabel(r.chg[0].from).toLowerCase())}</small></div><div style="text-align:right"><b class="num pos">${eur(dif(r))} / mois</b><div class="muted" style="font-size:12px">${eur0(dif(r)*12)} / an</div></div></div>`).join("")}
+   ${SP.map(r=>`<div class="row"><div class="t" style="white-space:normal"><b style="white-space:normal">${esc(r.label)}</b><small style="white-space:normal">arrêté · dernier prélèvement : ${esc(mLabel(r.end).toLowerCase())}</small></div><div style="text-align:right"><b class="num pos">${eur(-r.amt)} / mois</b><div class="muted" style="font-size:12px">${eur0(-r.amt*12)} / an</div></div></div>`).join("")}
+   <p class="muted" style="font-size:12px;margin:6px 0 0">Chaque arrêt ou baisse de prix s'ajoute ici tout seul. Le détail se modifie dans Budget, Récurrent, avec le crayon.</p></section>`;
 }
 function vLeaks(mk){
   const items=[];
@@ -2642,6 +2649,7 @@ document.addEventListener("submit",e=>{
     const r={id:state.editRec||uid(),label:$("#r-label").value.trim(),amt,cat:$("#r-cat").value,sub:$("#r-sub").value,day:Number($("#r-day").value)||1,
       start:once?null:($("#r-start").value||null),end:once?null:($("#r-end").value||null),once:once?($("#r-start").value||nowMk()):null,acc:"cc"};
     const old=state.editRec?S().recurring.find(x=>x.id===state.editRec):null; if(old){ for(const k of Object.keys(old)) if(!(k in r)) r[k]=old[k]; }
+    { const ca=($("#r-chg-amt").value||"").trim(), cf=$("#r-chg-from").value; if(ca||cf){ const v=Math.abs(parseAmt(ca)); if(!(v>0)||!cf){ toast("Indique le nouveau montant et le mois"); return; } r.chg=[{from:cf,amt:-v}]; } else delete r.chg; }
     if($("#r-stopped").checked){ if(!r.end){ toast("Indique le dernier mois prélevé"); return; } r.stopped=true; const sd=$("#r-stopdate").value; if(sd) r.stopDate=sd; else delete r.stopDate; } else { delete r.stopped; delete r.stopDate; }
     const bl=$("#r-block").value; if(bl) r.block=bl; else delete r.block;
     S().recurring=[...S().recurring.filter(x=>x.id!==r.id),r]; saveSettings(); state.editRec=null; state.recNew=false; render(); toast("Récurrence enregistrée");
