@@ -439,10 +439,10 @@ function fixedPlan(mk,budget){ // charges fixes prévues du mois (récurrences s
   return {total,paid,list:st};
 }
 function cardCycle(mk){ // achats carte débités à la fin du mois mk (du 20 du mois précédent au 19)
-  const from=addM(mk,-1)+"-20", to=mk+"-19"; let v=0, n=0;
-  for(const m of [addM(mk,-1),mk]) for(const o of opsOf(m)) if(o.card&&o.d>=from&&o.d<=to){ v+=o.amt; n++; }
+  const from=addM(mk,-1)+"-20", to=mk+"-19"; let v=0, n=0, ndf=0;
+  for(const m of [addM(mk,-1),mk]) for(const o of opsOf(m)) if(o.card&&o.d>=from&&o.d<=to){ v+=o.amt; n++; if(o.pro&&o.pro.status==="attente"&&o.amt<0) ndf+=Math.min(Number(o.pro.remb||-o.amt),-o.amt); }
   const bank=((S().prefs||{}).cardBank||{})[mk];
-  return {calc:Math.round(v*100)/100, bank:(bank==null?null:Number(bank)), val:(bank==null?Math.round(v*100)/100:Number(bank)), n, from, to};
+  return {ndf:Math.round(ndf*100)/100, calc:Math.round(v*100)/100, bank:(bank==null?null:Number(bank)), val:(bank==null?Math.round(v*100)/100:Number(bank)), n, from, to};
 }
 function cardRecWin(md){ const from=addM(md,-1)+"-20", to=md+"-19", out=[]; for(const m of [addM(md,-1),md]) for(const x of recStatus(m)) if(!x.paid&&x.r.card&&x.amt<0&&x.date>=from&&x.date<=to) out.push(x); return out; }
 function cardSettled(mk){ return opsOf(mk).some(o=>o.sub==="Règlement carte"&&Number(o.d.slice(8))>=24); }
@@ -579,7 +579,7 @@ function barsChart(rows){
   let g="";
   for(let i=0;i<=4;i++){ const v=mx*i/4,yy=T+ih-ih*i/4; g+=`<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="#1C2742"/><text x="${L-8}" y="${yy+4}" text-anchor="end" font-size="10.5" fill="#5F6B85">${kfmt(v)}</text>`; }
   rows.forEach((r,i)=>{ const cx=L+gw*i+gw/2, op=r.cur?1:.55, ha=ih*r.a/mx, hb=ih*r.b/mx;
-    g+=`<rect x="${cx-bw-1}" y="${T+ih-ha}" width="${bw}" height="${ha}" rx="2" fill="#5EEAD4" opacity="${op}"><title>${mLabel(r.mk)} – entrées ${eur(r.a)}</title></rect><rect x="${cx+1}" y="${T+ih-hb}" width="${bw}" height="${hb}" rx="2" fill="#FF7A6B" opacity="${op}"><title>${mLabel(r.mk)} – sorties ${eur(r.b)}</title></rect><text x="${cx}" y="${H-6}" text-anchor="middle" font-size="10.5" fill="${r.cur?"#E7ECF5":"#5F6B85"}">${mShort(r.mk)}</text>`; });
+    g+=`<rect x="${cx-bw-1}" y="${T+ih-ha}" width="${bw}" height="${ha}" rx="2" fill="#5EEAD4" opacity="${op}"><title>${mLabel(r.mk)} – entrées ${eur(r.a)}</title></rect><rect x="${cx+1}" y="${T+ih-hb}" width="${bw}" height="${hb}" rx="2" fill="#FF7A6B" opacity="${op}"><title>${mLabel(r.mk)} – sorties ${eur(r.b)}</title></rect>${r.a>0?`<text x="${cx-bw/2-1}" y="${T+ih-ha-3}" text-anchor="middle" font-size="8" fill="#9FEFE0">${kfmt(r.a)}</text>`:""}${r.b>0?`<text x="${cx+bw/2+1}" y="${T+ih-hb-3}" text-anchor="middle" font-size="8" fill="#FFAFA5">${kfmt(r.b)}</text>`:""}<text x="${cx}" y="${H-6}" text-anchor="middle" font-size="10.5" fill="${r.cur?"#E7ECF5":"#5F6B85"}">${mShort(r.mk)}</text>`; });
   return `<svg class="chart" style="max-width:820px;margin:0 auto" viewBox="0 0 ${W} ${H}" role="img" aria-label="Entrées et sorties">${g}</svg>`;
 }
 function donut(segs,big,small){
@@ -751,7 +751,7 @@ function debitsHtml(D){
   const sh=(t,v)=>`<div class="row" style="padding:12px 0 4px;border:0;border-top:1px solid var(--line);margin-top:8px"><div class="t"><b style="font-size:14.5px;font-weight:800;color:${CB};text-transform:uppercase;letter-spacing:.02em;white-space:normal">${t}</b></div><span class="a num" style="font-size:14px;font-weight:700;color:${CB}">${sgn(v)}</span></div>`;
   const rw=(l,sub,v)=>`<div class="row" style="padding:6px 0"><div class="t"><b style="font-weight:400;font-size:13px">${esc(l)}</b>${sub?`<small>${esc(sub)}</small>`:""}</div><span class="a num" style="font-size:13px">${sgn(v)}</span></div>`;
   return `<div class="row" style="padding:6px 0 0"><div class="t"><b style="font-size:13px">Solde aujourd'hui</b></div><span class="a num" style="font-size:13px">${sgn(bal||0)}</span></div>
-    ${sh("Carte bancaire, débitée fin "+esc(mn(m0)),sCard)}${settled?"":rw("Achats déjà faits ("+c1.n+")","du "+Number(c1.from.slice(8))+"/"+c1.from.slice(5,7)+" au "+Number(c1.to.slice(8))+"/"+c1.to.slice(5,7),cardPart)}${pendCard.map(x=>rw(x.r.label,"abonnement, le "+Number(x.date.slice(8))+" "+mn(x.date.slice(0,7)),x.amt)).join("")}
+    ${sh("Carte bancaire, débitée fin "+esc(mn(m0)),sCard)}${settled?"":rw("Achats déjà faits ("+c1.n+")","du "+Number(c1.from.slice(8))+"/"+c1.from.slice(5,7)+" au "+Number(c1.to.slice(8))+"/"+c1.to.slice(5,7),cardPart)}${!settled&&c1.ndf>0.005?`<div class="row" style="padding:2px 0 6px"><div class="t"><b style="font-weight:400;font-size:12.5px;color:${CB}">dont notes de frais, à te faire rembourser</b></div><span class="a num" style="font-size:12.5px;color:${CB}">${eur(c1.ndf)}</span></div>`:""}${pendCard.map(x=>rw(x.r.label,"abonnement, le "+Number(x.date.slice(8))+" "+mn(x.date.slice(0,7)),x.amt)).join("")}
     ${sh("Prélèvements à venir",r2(oth.reduce((a,x)=>a+x.amt,0)))}${oth.map(x=>rw(x.r.label,"le "+dl(x),x.amt)).join("")}
     ${cre.length?sh("Mensualités de crédit à venir",r2(cre.reduce((a,x)=>a+x.amt,0)))+cre.map(x=>rw(x.r.label,"le "+dl(x),x.amt)).join(""):""}
     <div class="row" style="padding:8px 0 4px;border-top:1px solid var(--line);margin-top:10px"><div class="t"><b style="font-size:13px">Reste à débiter</b></div><span class="a num" style="font-size:13px">${sgn(resteTot)}</span></div>
@@ -1503,26 +1503,19 @@ function vBudgetMonth(mk){
    <div class="row"><div class="t"><b style="font-weight:400" class="muted">Revenus avant impôt</b><small>${BB.est?"estimés : net fixe + commissions sûres":"paie reçue, commissions comprises"}</small></div><span class="a num" style="font-size:16px;font-weight:700">${eur0(salaire)}</span></div>
    <div class="row"><div class="t"><b style="font-weight:400" class="muted">Impôt prélevé à la source</b></div><span class="a num neg" style="font-size:16px;font-weight:700">− ${eur0(tax)}</span></div>
    <div class="row" style="border-top:1px solid var(--line)"><div class="t"><b>Reçu sur le compte</b></div><span class="a num" style="font-size:20px;font-weight:700;color:#38BDF8">${eur0(recu)}</span></div>
-   <p class="muted" style="font-size:12px;margin:6px 0 0">L'impôt n'est plus compté dans « Essentiel » : il est suivi ici.</p></section>
-   <section class="card"><div class="ch"><h2>Mes impôts</h2><span class="s">suivi à part, hors des 50 / 30 / 20</span></div>
+   <p class="muted" style="font-size:12px;margin:6px 0 0">L'impôt n'est plus compté dans « Essentiel » : il est suivi plus bas, dans « Mes impôts ».</p></section>`;
+  const taxHtml=`<section class="card"><div class="ch"><h2>Mes impôts</h2><span class="s">suivi à part, hors des 50 / 30 / 20</span></div>
    <div class="row"><span class="muted">Ce mois</span><b class="num">${eur0(tax)}</b></div><div class="row"><span class="muted">Depuis janvier</span><b class="num">${eur0(ytd)}</b></div><div class="row"><span class="muted">Part de mes revenus avant impôt</span><b class="num">${salaire>0?Math.round(tax/salaire*100):0} %</b></div></section>`;
   const tot=BB.spent+BB.todo, over=BB.diff<-0.5, pOv=recu>0?Math.abs(BB.diff)/recu*100:0, prOv=pOv>0&&pOv<1?"moins de 1":String(Math.round(pOv)), colB=over?"var(--coral)":"#38BDF8";
   let h=baseHtml+`<section class="card"><div class="row"><div class="t"><b style="font-weight:400" class="muted">Déjà payé</b></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(BB.spent)}</span></div>
    <div class="row"><div class="t"><b style="font-weight:400" class="muted">Encore à venir</b><small style="white-space:normal;overflow:visible;text-overflow:clip">prévu ce mois-ci, mais pas encore parti de ton compte</small></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(BB.todo)}</span></div>
    <div class="row" style="border-top:1px solid var(--line)"><div class="t"><b>Total du mois</b></div><span class="a num" style="font-size:18px;font-weight:700;color:${over?"var(--coral)":"inherit"}">${eur0(tot)}</span></div>
-   <div class="row"><div class="t"><b style="font-weight:400" class="muted">Reçu sur ton compte</b><small>${BB.est?"estimé : net fixe + commissions sûres, moins l'impôt":"paie reçue, impôt retiré"}</small></div><span class="a num" style="font-size:18px;font-weight:700">${eur0(recu)}</span></div>
    <div class="row" style="border-top:1px solid var(--line)"><div class="t"><b style="color:${colB}">${over?"Dépassé de "+prOv+" %":"Marge de "+prOv+" %"}</b></div><span class="a num" style="font-size:20px;font-weight:700;color:${colB}">${eur0(Math.abs(BB.diff))}</span></div>
    <div style="position:relative;height:10px;background:#1A2440;border-radius:9px;margin-top:6px;overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:${recu>0?Math.min(100,tot/recu*100):0}%;background:${colB};border-radius:9px"></i></div>
    ${BB.todo>0.5?`<div style="background:rgba(255,255,255,.04);border-radius:14px;padding:10px 12px;margin-top:12px"><div class="muted" style="font-size:12px;margin-bottom:4px">Les ${eur0(BB.todo)} à venir, bloc par bloc</div>${[["Essentiel",G.ess.todo],["Non essentiel",G.non.todo],["Dettes (crédits)",G.det.todo]].map(([l,v])=>`<div class="row" style="padding:3px 0"><span class="muted" style="font-size:13px">${l}</span><span class="num" style="font-size:13px">${eur0(v)}</span></div>`).join("")}</div>`:""}
    <div class="row" style="border-top:1px solid var(--line);margin-top:12px"><div class="t"><b style="font-weight:400" class="muted">Plafonds utilisés</b><small>${eur0(BB.spent)} sur ${eur0(G.totalNet)}</small></div><span class="a num" style="font-size:18px;font-weight:700;color:#38BDF8">${G.totalNet>0?Math.round(BB.spent/G.totalNet*100):0} %</span></div>
    <p class="muted" style="font-size:12px;margin:6px 0 0">${marge<0?"Tes plafonds ("+eur0(G.totalNet)+") dépassent ce que tu reçois ("+eur0(recu)+") de "+eur0(-marge)+".":"Tes plafonds ("+eur0(G.totalNet)+") tiennent dans ce que tu reçois ("+eur0(recu)+")."}</p></section>`;
   if(mk===nowMk()) h+=recvCardHtml();
-  h+=`<section class="kpis">
-   <div class="kpi"><small>Reçu pour ${esc(mLabel(mk).split(" ")[0].toLowerCase())}</small><b class="pos">${eur0(recu)}</b><span>${salOps.length?"paie reçue, impôt retiré":"estimé, impôt retiré"}</span></div>
-   <div class="kpi"><small>Total de mes plafonds</small><b>${eur0(G.totalNet)}</b><span>charges fixes comprises${G.epa.plaf?" · dont "+eur0(G.epa.plaf)+" d'épargne":""}</span></div>
-   <div class="kpi"><small>Déjà dépensé</small><b>${eur0(G.ess.spent+G.non.spent+G.det.spent)}</b><span>essentiel + non essentiel + dettes</span></div>
-   <div class="kpi" style="grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><div><small>Budget : reçu − plafonds</small><span style="display:block">${marge<0?"tes plafonds dépassent tes revenus":"tes plafonds tiennent dans tes revenus"}</span></div><b class="num ${marge<0?"neg":"pos"}">${sgn(marge)}</b></div>
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><div><small>Réel : reçu − déjà dépensé</small><span style="display:block">${reel<0?"tu as déjà dépensé plus que ta paie":"tu as dépensé moins que ta paye"}</span></div><b class="num ${reel<0?"neg":"pos"}">${sgn(reel)}</b></div></div></section>`;
   { const mn=m=>mLabel(m).split(" ")[0].toLowerCase(), nx=addM(mk,1), GN=planGroups(nx), spn=GN.ess.spent+GN.non.spent;
     h=`<div style="margin:2px 2px 10px"><div style="font-size:19px;font-weight:700">Budget de ${esc(mLabel(mk).toLowerCase())}</div><div class="muted" style="font-size:12px">Carte : achats du 20 ${esc(mn(addM(mk,-1)))} au 19 ${esc(mn(mk))}. Le reste compte à sa date.</div></div>`+h;
     if(spn>0.5) h+=`<div class="card" style="border-color:rgba(124,168,255,.45);display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 14px"><span style="font-size:13.5px"><b>${esc(mn(nx).charAt(0).toUpperCase()+mn(nx).slice(1))}</b> est déjà entamé : <b class="num">${eur0(spn)}</b> <span class="muted">(achats carte depuis le 20)</span></span><button class="btn sm" data-act="goto-month" data-mk="${nx}">Voir</button></div>`; }
@@ -1553,6 +1546,7 @@ function vBudgetMonth(mk){
   if(mk===nowMk()) h+=`<p class="muted" style="font-size:12.5px;margin:0 0 10px">Le budget se lit ici. Pour pointer un achat ou un prélèvement : <a href="#" data-act="to-pointer" style="color:var(--mint)">Opérations › À pointer</a>.</p>`;
   h+=`<section class="card"><details class="more" style="margin:0"><summary><b>Toutes les charges fixes de ${esc(mLabel(mk).toLowerCase())}</b> · ${plan.list.filter(x=>x.paid).length}/${plan.list.length} passées · ${eur0(-plan.total)}</summary>
    ${plan.list.map(x=>`<div class="row"><span class="bar4" style="background:${catColor(x.r.cat)}"></span><div class="t"><b>${esc(x.r.label)}${x.paid?'<span class="tag okk">passé</span>':'<span class="tag todo">prévu</span>'}${x.r.card?'<span class="tag">CB</span>':""}</b><small>${esc(catName(x.r.cat))} · ${esc(x.r.sub||"")} · le ${Number(x.date.slice(8))}</small></div><span class="a ${x.amt>0?"pos":""}">${sgn(x.amt)}</span>${x.paid?"":`<button class="ibtn" title="Marquer comme passé" data-act="rec-pay" data-rid="${x.r.id}" data-mk="${mk}">${ICON.check}</button>`}</div>`).join("")}</details></section>`;
+  h+=taxHtml;
   return h;
 }
 function tileState(x){ const lim=x.plaf, sp=x.spent;
@@ -1649,6 +1643,7 @@ function vPointer(mk){
     const closed=today>to, est=Math.round((C.calc+(closed?0:exp))*100)/100, main=C.bank!=null?C.bank:est;
     const nSeen=ops.filter(o=>cardState(o)!=="saisie").length, gap=C.bank!=null?Math.round((C.bank-C.calc)*100)/100:0;
     let h=`<div class="mc" style="cursor:default"><div><b>${title}</b><div class="muted" style="font-size:12px">${per} · débit fin ${esc(mn(md))}</div></div><span class="num" style="font-size:17px;font-weight:600;white-space:nowrap">${sgn(main)}</span></div>
+     ${C.ndf>0.005?`<div class="row" style="padding:6px 0 0;border:0"><span style="font-size:12.5px;color:#38BDF8">dont notes de frais, à te faire rembourser</span><b class="num" style="color:#38BDF8;font-size:13px">${eur(C.ndf)}</b></div><div class="row" style="padding:2px 0 0;border:0"><span style="font-size:12.5px">Vraiment pour toi</span><b class="num" style="font-size:13px">${eur(Math.max(0,-main-C.ndf))}</b></div>`:""}
      <p class="muted" style="font-size:12.5px;margin:6px 0 0">Dans l'appli : ${eur(-C.calc)} (${ops.length} achat${ops.length>1?"s":""}, ${nSeen} vu${nSeen>1?"s":""} à la banque)${!closed&&exp<0?" + encore prévu "+eur(-exp)+" (abonnements, échéances) = "+eur(-est)+" estimé":""}${closed?"":" · relevé clos le "+esc(dd(to))}</p>
      <p class="muted" style="font-size:12.5px;margin:2px 0 0">${C.bank!=null?"Selon ta banque : "+eur(-C.bank)+(Math.abs(gap)<0.05?" · identique à l'appli":" · écart de "+eur(Math.abs(gap))+(gap<0?" : des achats manquent dans l'appli":" : l'appli compte plus que ta banque")):"Montant de ta banque non saisi"}</p>
      <div class="toolbar" style="margin:6px 0">${first?'<label class="btn sm" style="cursor:pointer">Rapprocher mon relevé (CSV)<input type="file" id="recoFile" accept=".csv,text/csv" hidden></label>':""}<button class="btn sm" data-act="av-card" data-mk="${md}">${C.bank!=null?"Modifier":"Saisir"} le montant de ma banque</button>${closed?`<button class="btn sm pri" data-act="av-debit" data-mk="${md}">Il est débité de mon compte</button>`:""}${C.bank!=null?`<button class="btn sm" data-act="av-card-reset" data-mk="${md}">Effacer</button>`:""}</div>`;
@@ -1923,7 +1918,7 @@ function pasBars(years,N){
   const all=years.flatMap(y=>Array.from({length:N},(_,i)=>(payParts(y,i+1)||{pas:0}).pas));
   const mx=niceMax(Math.max(...all,1)), gw=iw/N, bw=Math.min(14,(gw-6)/years.length); let g="";
   for(let i=0;i<=4;i++){ const v=mx*i/4,yy=T+ih-ih*i/4; g+=`<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="#1C2742"/><text x="${L-8}" y="${yy+4}" text-anchor="end" font-size="10.5" fill="#5F6B85">${kfmt(v)}</text>`; }
-  for(let i=0;i<N;i++){ const cx=L+gw*i+gw/2; years.forEach((y,j)=>{ const v=(payParts(y,i+1)||{pas:0}).pas, h=ih*v/mx, x0=cx-bw*years.length/2+j*bw; g+=`<rect x="${x0.toFixed(1)}" y="${(T+ih-h).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${yCol(y)}"><title>${y} · ${mShort("2000-"+pad(i+1))} : ${eur(v)}</title></rect>`; });
+  for(let i=0;i<N;i++){ const cx=L+gw*i+gw/2; years.forEach((y,j)=>{ const v=(payParts(y,i+1)||{pas:0}).pas, h=ih*v/mx, x0=cx-bw*years.length/2+j*bw; g+=`<rect x="${x0.toFixed(1)}" y="${(T+ih-h).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${yCol(y)}"><title>${y} · ${mShort("2000-"+pad(i+1))} : ${eur(v)}</title></rect>${v>0?`<text x="${(x0+(bw-1)/2).toFixed(1)}" y="${(T+ih-h-3).toFixed(1)}" text-anchor="middle" font-size="8.5" fill="#B9C3D9">${Math.round(v)}</text>`:""}`; });
     g+=`<text x="${cx}" y="${H-6}" text-anchor="middle" font-size="10.5" fill="#5F6B85">${mShort("2000-"+pad(i+1))}</text>`; }
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Impôt prélevé par mois">${g}</svg>`;
 }
@@ -2021,9 +2016,6 @@ function vAnalyse(){
   const start=S().prefs.startMonth||allMonths()[0]||mk;
   const sorties=-t.sorties;
   let h=banner();
-  h+=`<section class="glass hero"><div class="k">Bilan du mois · ${esc(mLabel(mk))}</div><div class="v ${t.solde<0?"neg":""}">${sgn(t.solde)}</div>
-   <div class="muted" style="font-size:12.5px">De salaire à salaire : le salaire reçu fin ${esc(mLabel(addM(mk,-1)).split(" ")[0].toLowerCase())} compte pour ${esc(mLabel(mk).split(" ")[0].toLowerCase())}. Hors épargne, emprunts et virements entre tes comptes.</div>
-   <div class="row2"><div><small>Entrées</small><b class="pos">${eur0(t.rev)}</b></div><div><small>Sorties</small><b>${eur0(sorties)}</b></div><div><small>Reste</small><b class="${t.solde<0?"neg":"pos"}">${sgn(t.solde,eur0)}</b></div></div></section>`;
   h+=vAnaOu(mk,start);
   h+=vAnaRev();
   h+=vAnaPrimes();
@@ -2032,8 +2024,9 @@ function vAnalyse(){
   h+=vAnaCats(mk,start);
   h+=vAnaImpots();
   const segs=Object.entries(t.byCat).map(([c,v])=>({label:catName(c),v:-v,color:catColor(c)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v);
-  const top=segs.slice(0,6); if(segs.length>6) top.push({label:"Autres",v:segs.slice(6).reduce((a,x)=>a+x.v,0),color:"#475569"});
-  h+=`<section class="card"><div class="ch"><h2>Où part l'argent</h2><span class="s">${esc(mLabel(mk))}</span></div>${top.length?`<div class="donut">${donut(top,eur0(-t.dep),"dépensés")}<div>${top.map(x=>`<div class="row" style="padding:5px 0;border:0"><span class="bar4" style="background:${x.color};min-height:14px"></span><div class="t"><b style="font-weight:500;font-size:13px">${esc(x.label)}</b></div><span class="a" style="font-size:13px">${eur0(x.v)}</span><span class="muted num" style="font-size:12px;min-width:44px;text-align:right">${Math.round(x.v/top.reduce((a,y)=>a+y.v,0)*100)} %</span></div>`).join("")}</div></div>`:'<p class="muted">Aucune dépense ce mois-ci.</p>'}</section>`;
+  const top=segs.slice(0,6); if(segs.length>6) top.push({label:"Autres",v:segs.slice(6).reduce((a,x)=>a+x.v,0),color:"#475569",more:segs.slice(6)}); top.sort((a,b)=>b.v-a.v); const topSum=top.reduce((a,y)=>a+y.v,0);
+  h+=`<section class="card"><div class="ch"><h2>Où part l'argent</h2><span class="s">${esc(mLabel(mk))}</span></div>${top.length?`<div class="donut">${donut(top,eur0(-t.dep),"dépensés")}<div>${top.map(x=>{ const rw=`<div class="row" style="padding:5px 0;border:0"${x.more?` title="${esc(x.more.map(y=>y.label+" "+eur0(y.v)).join(" · "))}"`:""}><span class="bar4" style="background:${x.color};min-height:14px"></span><div class="t"><b style="font-weight:500;font-size:13px">${esc(x.label)}${x.more?` <span class="muted" style="font-weight:400;font-size:11.5px">▾ détail</span>`:""}</b></div><span class="a" style="font-size:13px">${eur0(x.v)}</span><span class="muted num" style="font-size:12px;min-width:44px;text-align:right">${Math.round(x.v/topSum*100)} %</span></div>`;
+      return x.more?`<details class="more"><summary style="list-style:none;cursor:pointer">${rw}</summary><div style="padding:0 0 6px 18px">${x.more.map(y=>`<div class="row" style="padding:3px 0;border:0"><div class="t"><span class="muted" style="font-size:12.5px">${esc(y.label)}</span></div><span class="a muted num" style="font-size:12.5px">${eur0(y.v)}</span><span class="muted num" style="font-size:12px;min-width:44px;text-align:right">${Math.round(y.v/topSum*100)} %</span></div>`).join("")}</div></details>`:rw; }).join("")}</div></div>`:'<p class="muted">Aucune dépense ce mois-ci.</p>'}</section>`;
   h+=G.evo;
   h+=vEconomies();
   h+=vLeaks(mk);
