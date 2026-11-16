@@ -419,7 +419,7 @@ function recStatus(mk,budget){
   for(const r of (S().recurring||[])){
     const late=budget&&((kindOf(r.cat)==="rev"&&(r.day||1)>=25)||(r.card&&kindOf(r.cat)!=="rev"&&(r.day||1)>=20));   // salaire de fin de mois : il finance le mois suivant
     const rm=late?addM(mk,-1):mk;
-    if(!recActive(r,mk)) continue;
+    if(!recActive(r,(r.once&&late)?rm:mk)) continue;   // dépense unique par carte débitée le mois suivant : comptée au budget du mois suivant
     const amt=recAmount(r,rm);
     const tol=Math.max(2,Math.abs(amt)*0.12);
     const rx=r.match?new RegExp(r.match,"i"):null;
