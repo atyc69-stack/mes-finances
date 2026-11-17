@@ -418,8 +418,10 @@ function recStatus(mk,budget){
   const ops=budget?budgetOps(mk):opsOf(mk);
   for(const r of (S().recurring||[])){
     const late=budget&&((kindOf(r.cat)==="rev"&&(r.day||1)>=25)||(r.card&&kindOf(r.cat)!=="rev"&&(r.day||1)>=20));   // salaire de fin de mois : il finance le mois suivant
-    const rm=late?addM(mk,-1):mk;
-    if(!recActive(r,(r.once&&late)?rm:mk)) continue;   // dépense unique par carte débitée le mois suivant : comptée au budget du mois suivant
+    const cardDep=r.card&&kindOf(r.cat)!=="rev", effDay=m=>{ const v=r.mv&&r.mv[m]; return v?Number(v.slice(8)):(r.day||1); };
+    const rms=(budget&&cardDep)?[...(effDay(addM(mk,-1))>=20?[addM(mk,-1)]:[]),...(effDay(mk)<20?[mk]:[])]:[late?addM(mk,-1):mk];   // carte : achat à partir du 20 = débité le mois suivant, donc budget du mois suivant (date décalée comprise)
+    for(const rm of rms){
+    if(!recActive(r,(r.once&&(late||cardDep))?rm:mk)) continue;   // dépense unique par carte débitée le mois suivant : comptée au budget du mois suivant
     const amt=recAmount(r,rm);
     const tol=Math.max(2,Math.abs(amt)*0.12);
     const rx=r.match?new RegExp(r.match,"i"):null;
@@ -429,7 +431,8 @@ function recStatus(mk,budget){
     const mm=m||((kindOf(r.cat)==="rev"&&r.sub==="Salaire"&&(r.day||1)>=25)?ops.find(o=>!used.has(o.id)&&o.amt>0&&o.cat==="rev"&&o.sub==="Salaire"&&(o.paieOf||o.todoPaie||Number(o.d.slice(8))>=25)):null);
     if(mm) used.add(mm.id);
     if(!mm&&r.stopped&&mk<nowMk()) continue;   // abonnement arrêté : plus aucun prélèvement attendu dans les mois passés
-    out.push({r,amt,paid:!!mm,op:mm,moved:!!(r.mv&&r.mv[rm]),date:(r.mv&&r.mv[rm])||(rm+"-"+pad(Math.min(r.day||1,lastDay(rm))))});
+    out.push({r,amt,paid:!!mm,op:mm,moved:!!(r.mv&&r.mv[rm]),n:(r.inst&&r.start)?mDiff(r.start,rm)+1:0,date:(r.mv&&r.mv[rm])||(rm+"-"+pad(Math.min(r.day||1,lastDay(rm))))});
+    }
   }
   return out.sort((a,b)=>a.date.localeCompare(b.date));
 }
@@ -623,10 +626,10 @@ function mvBox(rid,m,date){ const key=rid+"|"+m; const [y,mo]=m.split("-").map(N
   if(state.mvKey!==key) return `<button class="ab" data-act="mv-open" data-rid="${rid}" data-mk="${m}" style="margin-left:6px">Décaler</button>`;
   return `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="muted" style="font-size:12.5px">Nouvelle date</span><input class="in" type="date" id="mv-d" value="${date}" ${(S().recurring.find(r=>r.id===rid)||{}).once?"":`min="${m}-01" max="${m}-${last}"`} style="width:auto"><button class="ab" data-act="mv-ok" data-rid="${rid}" data-mk="${m}">OK</button><button class="ab" data-act="mv-cancel">Annuler</button>${""}</div>`; }
 function ptRecRow(x,m,lab){ const mn=mm=>mLabel(mm).split(" ")[0].toLowerCase();
-  return `<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(x.r.label)}</b><small>${x.moved?"décalé au":"prévu le"} ${Number(x.date.slice(8))} ${esc(mn(m))} · ${esc(catName(x.r.cat))}</small></div><span class="a ${x.amt>0?"pos":""}">${sgn(x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-rid="${x.r.id}" data-mk="${m}">${lab}</button>${mvBox(x.r.id,m,x.date)}</div></div>`; }
+  return `<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(x.r.label)}${instTag(x)}</b><small>${x.moved?"décalé au":"prévu le"} ${Number(x.date.slice(8))} ${esc(mn(m))} · ${esc(catName(x.r.cat))}</small></div><span class="a ${x.amt>0?"pos":""}">${sgn(x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-rid="${x.r.id}" data-mk="${m}">${lab}</button>${mvBox(x.r.id,m,x.date)}</div></div>`; }
 function vPtList(k){
   const L=ptLists(), m0=nowMk(); let h=`<section class="card">`; const empty='<p class="muted" style="font-size:13px;margin:6px 0">Rien à pointer ici.</p>';
-  if(k==="vu"){ h+=`<div class="ch"><h2>Vu à la banque ?</h2><span class="s">${L.vu.length+L.vuRec.length} à confirmer</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Abonnements et achats saisis par toi, pas encore retrouvés sur ta banque.</p>`+(L.vu.length||L.vuRec.length?L.vuRec.map(e=>`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(e.x.r.label)}</b><small style="white-space:normal">abonnement carte · ${e.x.moved?"décalé au":"prévu le"} ${Number(e.x.date.slice(8))} ${esc(mLabel(e.m).split(" ")[0].toLowerCase())}</small></div><span class="a">${sgn(e.x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-seen="1" data-rid="${e.x.r.id}" data-mk="${e.m}">Je le vois à la banque</button>${mvBox(e.x.r.id,e.m,e.x.date)}</div></div>`).join("")+L.vu.map(o=>ptBuyRow(o,"vu")).join(""):empty)
+  if(k==="vu"){ h+=`<div class="ch"><h2>Vu à la banque ?</h2><span class="s">${L.vu.length+L.vuRec.length} à confirmer</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Abonnements et achats saisis par toi, pas encore retrouvés sur ta banque.</p>`+(L.vu.length||L.vuRec.length?L.vuRec.map(e=>`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(e.x.r.label)}${instTag(e.x)}</b><small style="white-space:normal">abonnement carte · ${e.x.moved?"décalé au":"prévu le"} ${Number(e.x.date.slice(8))} ${esc(mLabel(e.m).split(" ")[0].toLowerCase())}</small></div><span class="a">${sgn(e.x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-seen="1" data-rid="${e.x.r.id}" data-mk="${e.m}">Je le vois à la banque</button>${mvBox(e.x.r.id,e.m,e.x.date)}</div></div>`).join("")+L.vu.map(o=>ptBuyRow(o,"vu")).join(""):empty)
     +`<div class="toolbar" style="margin-top:10px">${L.vu.length+L.vuRec.length?`<button class="btn sm pri" data-act="vu-all">Tout marquer « vu à la banque » (${L.vu.length+L.vuRec.length})</button>`:""}<label class="btn sm" style="cursor:pointer">Ou importer mon relevé (CSV)<input type="file" id="recoFile" accept=".csv,text/csv" hidden></label></div>`+vRecoBox(nowMk()); }
   else if(k==="deb"){ const cre=L.debRec.filter(x=>x.r.cat==="cre"), oth=L.debRec.filter(x=>x.r.cat!=="cre");
     h+=`<div class="ch"><h2>À pointer en débit</h2><span class="s">${L.nDeb}</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Achats carte vus à la banque et prélèvements à venir. Ton solde de compte courant ne bouge que quand tu valides le relevé complet (onglet À pointer › Relevé de carte).</p>`;
@@ -754,7 +757,7 @@ function debitsHtml(D){
   const sh=(t,v)=>`<div class="row" style="padding:12px 0 4px;border:0;border-top:1px solid var(--line);margin-top:8px"><div class="t"><b style="font-size:14.5px;font-weight:800;color:${CB};text-transform:uppercase;letter-spacing:.02em;white-space:normal">${t}</b></div><span class="a num" style="font-size:14px;font-weight:700;color:${CB}">${sgn(v)}</span></div>`;
   const rw=(l,sub,v)=>`<div class="row" style="padding:6px 0"><div class="t"><b style="font-weight:400;font-size:13px">${esc(l)}</b>${sub?`<small>${esc(sub)}</small>`:""}</div><span class="a num" style="font-size:13px">${sgn(v)}</span></div>`;
   return `<div class="row" style="padding:6px 0 0"><div class="t"><b style="font-size:13px">Solde aujourd'hui</b></div><span class="a num" style="font-size:13px">${sgn(bal||0)}</span></div>
-    ${sh("Carte bancaire, débitée fin "+esc(mn(m0)),sCard)}${settled?"":rw("Achats déjà faits ("+c1.n+")","du "+Number(c1.from.slice(8))+"/"+c1.from.slice(5,7)+" au "+Number(c1.to.slice(8))+"/"+c1.to.slice(5,7),cardPart)}${!settled&&c1.ndf>0.005?`<div class="row" style="padding:2px 0 6px"><div class="t"><b style="font-weight:400;font-size:12.5px;color:${CB}">dont notes de frais, à te faire rembourser</b></div><span class="a num" style="font-size:12.5px;color:${CB}">${eur(c1.ndf)}</span></div><div class="row" style="padding:4px 0 8px"><div class="t"><b style="font-size:13px">Carte hors notes de frais</b><small class="muted" style="display:block;font-size:11.5px">ce qui est vraiment pour toi</small></div><span class="a num" style="font-size:13px;font-weight:600">${eur(sCard+c1.ndf)}</span></div>`:""}${pendCard.map(x=>rw(x.r.label,"abonnement, le "+Number(x.date.slice(8))+" "+mn(x.date.slice(0,7)),x.amt)).join("")}
+    ${sh("Carte bancaire, débitée fin "+esc(mn(m0)),sCard)}${settled?"":rw("Achats déjà faits ("+c1.n+")","du "+Number(c1.from.slice(8))+"/"+c1.from.slice(5,7)+" au "+Number(c1.to.slice(8))+"/"+c1.to.slice(5,7),cardPart)}${!settled&&c1.ndf>0.005?`<div class="row" style="padding:2px 0 6px"><div class="t"><b style="font-weight:400;font-size:12.5px;color:${CB}">dont notes de frais, à te faire rembourser</b></div><span class="a num" style="font-size:12.5px;color:${CB}">${eur(c1.ndf)}</span></div><div class="row" style="padding:4px 0 8px"><div class="t"><b style="font-size:13px">Carte hors notes de frais</b><small class="muted" style="display:block;font-size:11.5px">ce qui est vraiment pour toi</small></div><span class="a num" style="font-size:13px;font-weight:600">${eur(sCard+c1.ndf)}</span></div>`:""}${pendCard.map(x=>rw(x.r.label+instTag(x),"abonnement, le "+Number(x.date.slice(8))+" "+mn(x.date.slice(0,7)),x.amt)).join("")}
     ${sh("Prélèvements à venir",r2(oth.reduce((a,x)=>a+x.amt,0)))}${oth.map(x=>rw(x.r.label,"le "+dl(x),x.amt)).join("")}
     ${cre.length?sh("Mensualités de crédit à venir",r2(cre.reduce((a,x)=>a+x.amt,0)))+cre.map(x=>rw(x.r.label,"le "+dl(x),x.amt)).join(""):""}
     <div class="row" style="padding:8px 0 4px;border-top:1px solid var(--line);margin-top:10px"><div class="t"><b style="font-size:13px">Reste à débiter</b></div><span class="a num" style="font-size:13px">${sgn(resteTot)}</span></div>
@@ -1031,6 +1034,7 @@ function vOpsSaisir(){
    <div class="fld"><label for="o-note">Commentaire</label><input class="in" id="o-note" placeholder="Ex. transport Paris concert Céline Dion" value="${ed?esc(ed.note||""):""}"></div>
    <div class="fld" id="o-health-w" ${cat==="san"?"":"hidden"}><label for="o-health">Remboursement</label><select class="in" id="o-health"><option value="">Non remboursable</option><option value="avance" ${ed&&ed.health==="avance"?"selected":""}>Avance remboursable (neutre dans le budget)</option><option value="rembourse" ${ed&&ed.health==="rembourse"?"selected":""}>Remboursable (en attente)</option><option value="rembourse_ok" ${ed&&ed.health==="rembourse_ok"?"selected":""}>Remboursé</option></select></div>
    <div class="fld"><label><input type="checkbox" id="o-card" ${(ed?ed.card:kind==="dep")?"checked":""}> ${kind==="rev"?"Remboursé sur la carte : vient en déduction du débit de fin de mois":"Payé par carte (débit fin de mois)"}</label><label><input type="checkbox" id="o-fixed" ${ed&&ed.fixed?"checked":""}> Charge fixe</label></div>
+   ${!ed&&kind==="dep"?`<div class="fld" style="grid-column:1/-1"><label><input type="checkbox" id="o-inst"> <b>Payer en plusieurs fois</b></label><div id="o-inst-w" hidden style="margin-top:6px"><div class="muted" style="font-size:12px;margin-bottom:6px">Le montant ci-dessus est celui de chaque paiement. La date est celle du premier paiement.</div><label for="o-inst-n" class="muted" style="font-size:12.5px">Nombre de fois</label><input class="in num" id="o-inst-n" type="number" min="2" max="12" value="3" style="max-width:110px"><div id="o-inst-prev"></div></div></div>`:""}
    <div class="toolbar" style="grid-column:1/-1"><button class="btn pri" type="submit">${ed?"Enregistrer":"Ajouter"}</button>${ed?"":`<label class="btn" style="cursor:pointer">📎 Ticket (PDF ou photo)<input type="file" accept="application/pdf,image/*" id="ticketFile" hidden></label><label class="btn" style="cursor:pointer">📷 Scanner<input type="file" accept="image/*" capture="environment" id="scanFile" hidden></label>`}</div>
   </form></section>${state.ticketBusy?`<section class="card"><p class="muted" style="margin:0" id="busyTxt">⏳ ${esc(state.ticketBusy)}</p></section>`:""}${state.ocrDebug?`<section class="card"><div class="ch"><h2>Texte lu sur la photo</h2><button class="btn sm" data-act="ocr-close">Fermer</button></div><p class="muted" style="font-size:12px;margin:0 0 8px">Le total n'a pas été trouvé. Tu peux copier ce texte et me l'envoyer pour que j'améliore la lecture.</p><pre style="white-space:pre-wrap;font-size:11px;max-height:220px;overflow:auto;margin:0 0 8px;color:var(--muted)">${esc(state.ocrDebug)}</pre><button class="btn sm" data-act="ocr-copy">Copier le texte</button></section>`:""}${state.ticket?vTicket():""}`;
   return h;
@@ -1060,7 +1064,7 @@ function vOps(){
   if(t==="vu") return banner()+h+debitsLine()+vPtList("vu",true);
   if(t==="mois"){ const cyc=cycOpsAll(), cnt={saisie:0,bank:0,ok:0}; cyc.forEach(o=>{ const c=cardState(o); if(c) cnt[c]++; }); const F=state.stF||"";
     const chips=`<div class="optabs" style="grid-template-columns:repeat(2,1fr);margin-top:-4px">${[["","Toutes les opérations",""],["saisie","Saisies, pas vues à la banque",cnt.saisie],["bank","Vues à la banque, pas encore débitées",cnt.bank],["ok","Débitées du compte",cnt.ok]].map(([k,l,n])=>`<button data-act="st-f" data-k="${k}" class="${F===k?"on":""}">${l}${n!==""?` <span class="cnt">${n}</span>`:""}</button>`).join("")}</div>`;
-    return banner()+h+debitsLine()+chips+`<p class="muted" style="font-size:12px;margin:-2px 0 8px">Ces compteurs concernent les achats par carte de la période en cours (du 20 au 19), pas seulement le mois affiché.</p>`+(F?"":vMesCartes())+vOpsList(mk); }
+    return banner()+h+debitsLine()+instPlansHtml()+chips+`<p class="muted" style="font-size:12px;margin:-2px 0 8px">Ces compteurs concernent les achats par carte de la période en cours (du 20 au 19), pas seulement le mois affiché.</p>`+(F?"":vMesCartes())+vOpsList(mk); }
   return h+(state.editId?"":vPayeForm())+vOpsSaisir();
 }
 const PRO_TYPES={dej:["Déjeuner",{prov:18,paris:23}],din:["Dîner",{prov:25,paris:30}],hotel:["Hôtel",{prov:90,paris:110}],pdj:["Petit-déjeuner",{prov:18,paris:18}],transport:["Transport (train, carburant, location…)",null],vehicule:["Entretien véhicule de fonction",null],autre:["Autre",null]};
@@ -1818,6 +1822,8 @@ function vRecurring(mk){
    <div class="fld"><label for="r-end">Dernier mois prélevé (ou « jusqu'à », facultatif)</label><input class="in" id="r-end" type="month" value="${ed?(ed.end||""):""}"></div>
    <div class="fld"><label for="r-stopdate">Arrêté le (facultatif)</label><input class="in" id="r-stopdate" type="date" value="${ed&&ed.stopDate?ed.stopDate:""}"></div>
    <div class="fld"><label for="r-once">Fréquence</label><select class="in" id="r-once"><option value="">Chaque mois</option><option value="once" ${ed&&ed.once?"selected":""}>Une seule fois</option></select></div>
+   <div class="fld"><label for="r-inst">Payé en plusieurs fois : nombre de fois</label><input class="in num" id="r-inst" type="number" min="2" max="12" placeholder="vide = chaque mois sans fin" value="${ed&&ed.inst?ed.inst:""}"></div>
+   <div class="fld" style="grid-column:1/-1"><label><input type="checkbox" id="r-card" ${ed&&ed.card?"checked":""}> <b>Payé par carte Crédit Mutuel</b> <span class="muted" style="font-size:12px">débit fin de mois, ou fin du mois suivant à partir du 20</span></label></div>
    <div class="fld"><label for="r-block">Où la ranger dans la liste ?</label><select class="in" id="r-block">${[["","Automatique (selon la date de fin)"],["an","Toute l'année"],["fin","Se termine bientôt"],["mois","Certains mois"]].map(([v,l])=>`<option value="${v}" ${(ed&&ed.block||"")===v?"selected":""}>${l}</option>`).join("")}</select></div>
    <button class="btn pri" type="submit">${ed?"Enregistrer":"Ajouter"}</button></form></section>`;
   const limit12=addM(nowMk(),12);
@@ -2371,8 +2377,23 @@ function entFix(){
   if(!s.prefs.ccbillDone&&!(s.recurring||[]).some(r=>/CCBILL/i.test((r.label||"")+" "+(r.match||"")))){ const abo=s.cats.find(c=>c.id==="abo"); (s.recurring=s.recurring||[]).push({id:"ccbill",label:"CCBill com Lib Reno",amt:-31.29,cat:"abo",sub:abo&&abo.subs.includes("Autres")?"Autres":((abo&&abo.subs[0])||""),day:24,start:"2026-07",end:"2026-10",stopped:true,card:true,acc:"cc",match:"CCBILL"}); s.prefs.ccbillDone=true; cc=true; }
   if(cc) Store.saveSettings();
 }
+const mDiff=(a,b)=>(Number(b.slice(0,4))-Number(a.slice(0,4)))*12+Number(b.slice(5))-Number(a.slice(5));
+const instTag=x=>x&&x.n?` (${x.n}/${x.r.inst})`:"";
+function migInst(){ const P=S().prefs; if(P.migNf) return; P.migNf=true;
+  const nf=(S().recurring||[]).find(r=>/nutriforce/i.test(r.label)&&r.start&&r.end&&!r.inst&&!r.once); if(nf){ const n=mDiff(nf.start,nf.end)+1; if(n>=2&&n<=12){ nf.inst=n; nf.card=true; saveSettings(); } } }
+function instAmount(){ const v=parseAmt(($("#o-amt")||{}).value||""); return v>0?v:0; }
+function instPrevHtml(){ const w=$("#o-inst-prev"); if(!w) return; const n=parseInt(($("#o-inst-n")||{}).value,10), d=($("#o-date")||{}).value, v=instAmount(), card=$("#o-card")&&$("#o-card").checked&&$("#o-acc").value==="cc";
+  if(!(n>=2&&n<=12)||!d){ w.innerHTML=""; return; } const m0=mkOf(d), day=Number(d.slice(8)); let h='<div class="muted" style="font-size:12px;margin:6px 0 2px">Ce qui sera créé :</div>';
+  for(let i=0;i<n;i++){ const m=addM(m0,i), dd=Math.min(day,lastDay(m)), deb=card?(dd>=20?addM(m,1):m):null; h+=`<div class="row" style="padding:4px 0"><div class="t"><b style="font-weight:500;font-size:13px">${dd} ${esc(mLabel(m).split(" ")[0].toLowerCase())}</b><small>${card?"débit fin "+esc(mLabel(deb).split(" ")[0].toLowerCase()):"prélevé sur le compte"}</small></div><span class="a">${v?sgn(-v):"…"}</span></div>`; }
+  w.innerHTML=h; }
+function instPlansHtml(){ const L=(S().recurring||[]).filter(r=>r.inst&&r.start&&r.amt<0); if(!L.length) return ""; const today=todayISO();
+  const rows=L.map(r=>{ let rest=0, lines=""; for(let i=0;i<r.inst;i++){ const m=addM(r.start,i), x=recStatus(m).find(y=>y.r.id===r.id); if(!x) continue; const st=x.paid?'<span class="pos" style="font-size:12px">pointé</span>':x.date<=today?'<span style="font-size:12px;color:var(--amber)">à pointer</span>':'<span class="muted" style="font-size:12px">à venir</span>'; if(!x.paid) rest+=x.amt;
+      lines+=`<div class="row" style="flex-wrap:wrap;padding:6px 0"><div class="t" style="flex:1 1 55%"><b style="font-weight:500">${i+1}/${r.inst} · ${Number(x.date.slice(8))} ${esc(mLabel(m).split(" ")[0].toLowerCase())}</b><small>${x.moved?"décalé · ":""}${r.card?"carte":"sur le compte"}</small></div><div style="text-align:right"><span class="a">${sgn(x.amt)}</span><div>${st}</div></div>${x.paid?"":`<div style="flex-basis:100%">${mvBox(r.id,m,x.date)}</div>`}</div>`; }
+    return `<div style="padding:8px 0;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(r.label)}</b><button class="ab" data-act="inst-edit" data-id="${r.id}">Modifier</button></div>${lines}<div class="row" style="padding:6px 0 0;border:0"><div class="t"><small>Reste à payer</small></div><span class="a">${sgn(rest)}</span></div></div>`; }).join("");
+  return `<section class="card"><div class="ch"><h2>Paiements en plusieurs fois</h2></div><p class="muted" style="font-size:12.5px;margin:0">Chaque paiement apparaît dans « Vu à la banque ? » à sa date.</p>${rows}</section>`; }
 function render(){
   if(!state.settings){ renderEmpty(); return; }
+  try{ migInst(); }catch(e){}
   if(!state._entFix||state._entFixN!==allMonths().length){ state._entFix=true; state._entFixN=allMonths().length; try{ entFix(); }catch(e){} }
   const tabs=[["home","Accueil"],["ops","Opérations"],["budget","Budget"],["patri","Patrimoine"],["analyse","Analyse"]];
   const icons={home:ICON.home,ops:ICON.ops,budget:ICON.bud,patri:ICON.pat,analyse:ICON.ana};
@@ -2448,6 +2469,7 @@ document.addEventListener("click",e=>{
     case "spl-undo": splUndo(t.dataset.mk,t.dataset.id); render(); toast("Division annulée : une seule ligne"); break;
     case "rec-amt": state.recAmt={rid:t.dataset.rid,mk:t.dataset.mk}; render(); setTimeout(()=>{ const i=$("#ra-amt"); if(i){ i.focus(); i.select(); } },50); break;
     case "rec-amt-no": state.recAmt=null; render(); break;
+    case "inst-edit": state.editRec=t.dataset.id; state.budSeg="rec"; go("budget"); break;
     case "mv-open": state.mvKey=t.dataset.rid+"|"+t.dataset.mk; render(); break;
     case "mv-cancel": state.mvKey=null; render(); break;
     case "mv-ok": { const r=S().recurring.find(x=>x.id===t.dataset.rid); const mk=t.dataset.mk; const d=($("#mv-d")||{}).value; if(!r||!d){ toast("Choisis une date"); break; }
@@ -2611,6 +2633,8 @@ document.addEventListener("change",e=>{
   if(el.id==="recoFile"&&el.files[0]){ const f=el.files[0]; readCSV(f).then(()=>{ if(state.importPreview&&!state.importPreview.card){ state.importPreview=null; render(); toast("Ce fichier n'est pas un relevé de carte"); } }); el.value=""; return; }
   if((el.id==="jsonFile"||el.id==="jsonFile0")&&el.files[0]) readJSON(el.files[0]);
 });
+document.addEventListener("change",e=>{ const id=e.target.id; if(id==="o-inst"){ const w=$("#o-inst-w"); if(w) w.hidden=!e.target.checked; instPrevHtml(); } else if(id==="o-date"||id==="o-card"||id==="o-acc") instPrevHtml(); });
+document.addEventListener("input",e=>{ const id=e.target.id; if(id==="o-amt"||id==="o-inst-n"||id==="o-date") instPrevHtml(); });
 document.addEventListener("input",e=>{
   if(e.target.id==="cat-q"){ state.catQ=e.target.value; const L=$("#catList"); if(L) L.innerHTML=catListHtml(); return; }
   if(e.target.id==="f-q"){ state.filter.q=e.target.value; const pos=e.target.selectionStart; render(); const el=$("#f-q"); if(el){ el.focus(); try{el.setSelectionRange(pos,pos);}catch(_){} } }
@@ -2637,6 +2661,8 @@ document.addEventListener("submit",e=>{
     const o={id:state.editId||uid(),d,amt,label:$("#o-label").value.trim()||catName(cat),cat,sub:$("#o-sub").value,acc:$("#o-acc").value,note:$("#o-note").value.trim(),fixed:$("#o-fixed").checked,card:$("#o-card").checked&&$("#o-acc").value==="cc"};
     if(cat==="san"&&$("#o-health").value) o.health=$("#o-health").value;
     const mk=mkOf(d);
+    if(!state.editId&&k==="dep"&&$("#o-inst")&&$("#o-inst").checked){ const n=parseInt($("#o-inst-n").value,10); if(!(n>=2&&n<=12)){ toast("Indique un nombre de fois entre 2 et 12"); return; }
+      S().recurring=[...S().recurring,{id:uid(),label:o.label,amt:-v,cat,sub:o.sub,day:Number(d.slice(8)),start:mk,end:addM(mk,n-1),inst:n,card:o.card,acc:o.acc}]; saveSettings(); state.opsTab="mois"; state.month=mk; render(); toast("Paiement en "+n+" fois enregistré"); return; }
     if(state.editId){ const old=state.editMk; const prev=opsOf(old).find(x=>x.id===state.editId); if(prev&&prev.recId) o.recId=prev.recId; if(prev&&prev.pro){ o.pro=Object.assign({},prev.pro); const rv=($("#o-remb")||{}).value; if(rv!=null&&rv.trim()!==""&&parseAmt(rv)>=0) o.pro.remb=r2(parseAmt(rv)); if(prev.grp) o.grp=prev.grp; } else if(prev&&prev.av) o.av=Object.assign({},prev.av); if(old!==mk) setMonthOps(old,opsOf(old).filter(x=>x.id!==state.editId)); setMonthOps(mk,[...opsOf(mk).filter(x=>x.id!==state.editId),o]); state.editId=null; toast("Opération modifiée"); }
     else { setMonthOps(mk,[...opsOf(mk),o]); toast(amt>0?"Entrée ajoutée":"Dépense ajoutée"); }
     state.month=mk; render(); const a=$("#o-amt"); if(a){ a.value=""; a.focus(); } const l=$("#o-label"); if(l) l.value="";
@@ -2654,6 +2680,8 @@ document.addEventListener("submit",e=>{
     { const ca=($("#r-chg-amt").value||"").trim(), cf=$("#r-chg-from").value; if(ca||cf){ const v=Math.abs(parseAmt(ca)); if(!(v>0)||!cf){ toast("Indique le nouveau montant et le mois"); return; } r.chg=[{from:cf,amt:-v}]; } else delete r.chg; }
     if($("#r-stopped").checked){ if(!r.end){ toast("Indique le dernier mois prélevé"); return; } r.stopped=true; const sd=$("#r-stopdate").value; if(sd) r.stopDate=sd; else delete r.stopDate; } else { delete r.stopped; delete r.stopDate; }
     const bl=$("#r-block").value; if(bl) r.block=bl; else delete r.block;
+    if($("#r-card").checked) r.card=true; else delete r.card;
+    { const ni=parseInt($("#r-inst").value,10); if(!once&&r.start&&ni>=2&&ni<=12){ r.inst=ni; r.end=addM(r.start,ni-1); } else delete r.inst; }
     S().recurring=[...S().recurring.filter(x=>x.id!==r.id),r]; saveSettings(); state.editRec=null; state.recNew=false; render(); toast("Récurrence enregistrée");
   }
   if(f.id==="accForm"){ const a=S().accounts.find(x=>x.id===f.dataset.id); a.name=$("#a-name").value.trim()||a.name; a.bank=$("#a-bank").value.trim(); { const ty=$("#a-type"); if(ty&&["livret","placement"].includes(ty.value)) a.type=ty.value; } const b=$("#a-bal").value.trim(), oldB=a.balance, oldD=a.balanceDate; a.balance=b===""?null:parseAmt(b); const dv=$("#a-date").value||todayISO(), same=(oldB==null&&a.balance==null)||(oldB!=null&&a.balance===Number(oldB)); a.balanceDate=(same&&dv===todayISO()&&oldD)?oldD:dv; saveSettings(); state.editAcc=null; render(); toast("Compte mis à jour"); }
