@@ -549,7 +549,7 @@ function accBalance(a){
   let v=Number(a.balance);
   if(a.type==="courant"){
     for(const mk of allMonths()){ if(mk<mkOf(a.balanceDate||"0000-00")) continue;
-      for(const o of opsOf(mk)){ if(o.acc===a.id && o.d>a.balanceDate && (o.sub!=="Règlement carte"||o.manualReg) && !o.imported && !o.card) v+=o.amt; } }
+      for(const o of opsOf(mk)){ if(o.acc===a.id && o.d>a.balanceDate && (o.sub!=="Règlement carte"||o.manualReg) && !o.imported && !o.inBal && !o.card) v+=o.amt; } }
   }
   return Math.round(v*100)/100;
 }
@@ -604,15 +604,23 @@ function recvItems(){ const out=[];
     else if(o.av&&o.av.status==="attente") out.push({o,m,amt:Number(o.av.remb),sub:"avance"+(o.av.partial?", remboursement partiel":""),act:"av-recu"});
     else if(o.health==="avance"){ const got=hrGot(o), rem=r2(-o.amt-got); out.push({o,m,amt:rem>0?rem:0,got,sub:got>0?"remboursement en cours":"remboursée par la sécu et la mutuelle",act:"health-ok"}); } }
   return out.sort((a,b)=>a.o.d.localeCompare(b.o.d)); }
-function hrRecord(o,mk0,who,amt,d){ const mk=mkOf(d); o.hr=o.hr||[]; const id=uid(); o.hr.push({id,who,amt,d,opId:id});
+function hrRemove(o,mk0,pid,quiet){ const p=(o.hr||[]).find(x=>x.id===pid); if(!p) return; o.hr=o.hr.filter(x=>x.id!==pid);
+  for(const m of allMonths()){ const L=opsOf(m); if(L.some(x=>x.id===p.opId)){ setMonthOps(m,L.filter(x=>x.id!==p.opId)); break; } }
+  if(o.health==="rembourse_ok"){ o.health="avance"; delete o.hnet; } if(!o.hr.length) delete o.hr; Store.saveMonth(mk0); if(!quiet) state.hrOpen=null; }
+function hrRecord(o,mk0,who,amt,d,inBal){ const mk=mkOf(d); o.hr=o.hr||[]; const id=uid(); o.hr.push({id,who,amt,d,opId:id,inBal:!!inBal});
   const rem=r2(-o.amt-hrGot(o)); if(rem<=0.004){ o.health="rembourse_ok"; o.hnet=0; } state.hrOpen=null; Store.saveMonth(mk0);
-  setMonthOps(mk,[...opsOf(mk),{id,d,amt,label:"Remboursement "+who+" · "+o.label,cat:"neu",sub:"Avances",acc:o.acc||"cc",note:"",hrOf:o.id}]); render(); }
+  setMonthOps(mk,[...opsOf(mk),{id,d,amt,label:"Remboursement "+who+" · "+o.label,cat:hrCat().cat,sub:hrCat().sub,acc:o.acc||"cc",note:"",hrOf:o.id,inBal:!!inBal}]); render(); }
+function hrCat(){ return cats().some(c=>c.id==="ent_rbt")?{cat:"ent_rbt",sub:"Santé (CPAM, mutuelle)"}:{cat:"neu",sub:"Avances"}; }
+function migHr(){ const P=S().prefs; if(P.migHr||!cats().some(c=>c.id==="ent_rbt")) return; P.migHr=true; let c=false;
+  for(const mk of allMonths()){ let ch=false; for(const o of opsOf(mk)) if(o.hrOf&&o.cat==="neu"){ o.cat="ent_rbt"; o.sub="Santé (CPAM, mutuelle)"; ch=true; } if(ch){ Store.saveMonth(mk); c=true; } } saveSettings(); }
 const hrGot=o=>r2((o.hr||[]).reduce((a,p)=>a+p.amt,0));
 const HR_WHO=["Sécu (CPAM)","Mutuelle","Autre"];
 function hrRow(x){ const o=x.o, parts=o.hr||[], open=state.hrOpen===o.id;
-  const pl=parts.map(p=>`<div class="row" style="padding:3px 0;border:0"><div class="t"><small>${esc(dFr(p.d).slice(0,5))} · ${esc(p.who)}</small></div><span class="a pos" style="font-size:12.5px">+ ${eur(p.amt)}</span></div>`).join("");
-  const form=open?`<div style="flex-basis:100%;margin:6px 0"><div class="muted" style="font-size:12px">Qui a payé ?</div><select class="in" id="hr-who" style="margin:4px 0 8px">${HR_WHO.map((w,i)=>`<option ${parts.length===0&&i===0||parts.length&&parts[parts.length-1].who!==w&&i===1?"selected":""}>${esc(w)}</option>`).join("")}</select>
-    <div class="muted" style="font-size:12px">Montant reçu</div><input class="in num" id="hr-amt" inputmode="decimal" placeholder="0,00" style="margin:4px 0 8px"><div class="muted" style="font-size:12px">Date du virement</div><input class="in" id="hr-d" type="date" value="${todayISO()}" style="margin:4px 0 8px"><div style="display:flex;gap:6px"><button class="btn sm pri" data-act="hr-save" data-mk="${x.m}" data-id="${o.id}">Enregistrer</button><button class="btn sm" data-act="hr-cancel">Annuler</button></div><div class="muted" style="font-size:12px;margin-top:6px">Le virement est pointé sur ton compte. Il n'entre pas dans tes revenus.</div></div>`:"";
+  const pl=parts.map(p=>`<div class="row" style="padding:3px 0;border:0"><div class="t"><small>${esc(dFr(p.d).slice(0,5))} · ${esc(p.who)}</small></div><span class="a pos" style="font-size:12.5px">+ ${eur(p.amt)}</span><button class="ab" data-act="hr-edit" data-mk="${x.m}" data-id="${o.id}" data-p="${p.id}">Modifier</button><button class="ab" data-act="hr-del" data-mk="${x.m}" data-id="${o.id}" data-p="${p.id}" aria-label="Supprimer">✕</button></div>`).join("");
+  const ep=open?parts.find(p=>p.id===state.hrEditPart):null, remNow=r2(-o.amt-hrGot(o));
+  const form=open?`<div style="flex-basis:100%;margin:6px 0"><div class="muted" style="font-size:12px">Qui a payé ?</div><select class="in" id="hr-who" style="margin:4px 0 8px">${HR_WHO.map((w,i)=>`<option ${ep?(ep.who===w?"selected":""):(parts.length===0&&i===0||parts.length&&parts[parts.length-1].who!==w&&i===1?"selected":"")}>${esc(w)}</option>`).join("")}</select>
+    <div class="muted" style="font-size:12px">Montant reçu</div><input class="in num" id="hr-amt" inputmode="decimal" placeholder="0,00" value="${ep?String(ep.amt).replace(".",","):state.hrFull?String(remNow).replace(".",","):""}" style="margin:4px 0 8px"><div class="muted" style="font-size:12px">Date du virement</div><input class="in" id="hr-d" type="date" value="${ep?ep.d:todayISO()}" style="margin:4px 0 8px">
+    <label style="display:flex;gap:8px;align-items:flex-start;margin:0 0 8px;font-size:13px"><input type="checkbox" id="hr-inbal" ${ep?(ep.inBal?"checked":""):"checked"} style="margin-top:3px"><span>Déjà dans le solde de mon compte<br><span class="muted" style="font-size:12px">coche si tu as déjà mis ton solde à jour avec ce virement</span></span></label><div style="display:flex;gap:6px"><button class="btn sm pri" data-act="hr-save" data-mk="${x.m}" data-id="${o.id}">Enregistrer</button><button class="btn sm" data-act="hr-cancel">Annuler</button></div><div class="muted" style="font-size:12px;margin-top:6px">Le virement est pointé sur ton compte. Il n'entre pas dans tes revenus.</div></div>`:"";
   const btns=open?"":`<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 6px"><button class="btn sm pri" data-act="health-ok" data-mk="${x.m}" data-id="${o.id}">${parts.length?"Reçu : le reste":"Reçu en entier"}</button><button class="btn sm" data-act="hr-open" data-id="${o.id}">Reçu en partie</button></div>${parts.length?`<div class="row" style="flex-basis:100%;padding:6px 0 0"><div class="t"><b style="font-weight:500">Plus rien à attendre ?</b><small>le reste (${eur(x.amt)}) est à ma charge</small></div><button class="btn sm" data-act="hr-close" data-mk="${x.m}" data-id="${o.id}">Clore</button></div>`:""}`;
   return `<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(o.label)}</b><small style="white-space:normal">${esc(dFr(o.d).slice(0,5))} · ${parts.length?`${eur(-o.amt)} à rembourser · reste ${eur(x.amt)}`:esc(x.sub)}</small></div><span class="a pos">${eur(parts.length?x.amt:-o.amt)}</span>${pl?`<div style="flex-basis:100%">${pl}</div>`:""}${form}${btns}</div>`; }
 function recvRows(L){ return L.map(x=>x.act==="health-ok"?hrRow(x):`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(x.o.label)}</b><small style="white-space:normal">${esc(dFr(x.o.d).slice(0,5))} · ${esc(x.sub)}</small></div><span class="a pos">${eur(x.amt)}</span><button class="btn sm pri" data-act="${x.act}" data-mk="${x.m}" data-id="${x.o.id}">Reçu</button></div>`).join(""); }
@@ -1267,7 +1275,7 @@ function saveTicket(){
 function vOpsList(mk){
   let h="";
   const fl=state.filter, q=fl.q.trim().toLowerCase();
-  let list=(state.stF?cycOpsAll():opsOf(mk)).filter(o=>(!fl.cat||o.cat===fl.cat)&&(!fl.acc||o.acc===fl.acc)&&(fl.neu||kindOf(o.cat)!=="neu"||!!o.pro||o.sub==="Notes de frais"||o.sub==="Virements internes"||o.sub==="Règlement carte")&&(!fl.kind||(fl.kind==="rev"?(o.amt>0&&kindOf(o.cat)!=="neu"):fl.kind==="dep"?(o.amt<0&&kindOf(o.cat)!=="neu"):(o.sub==="Notes de frais"||!!o.pro)))&&(!state.stF||cardState(o)===state.stF)&&(!q||(o.label+" "+(o.sub||"")+" "+(o.note||"")).toLowerCase().includes(q)));
+  let list=(state.stF?cycOpsAll():opsOf(mk)).filter(o=>(!fl.cat||o.cat===fl.cat)&&(!fl.acc||o.acc===fl.acc)&&(fl.neu||kindOf(o.cat)!=="neu"||!!o.pro||o.sub==="Notes de frais"||o.sub==="Virements internes"||o.sub==="Règlement carte"||!!o.hrOf)&&(!fl.kind||(fl.kind==="rev"?(o.amt>0&&kindOf(o.cat)!=="neu"):fl.kind==="dep"?(o.amt<0&&kindOf(o.cat)!=="neu"):(o.sub==="Notes de frais"||!!o.pro)))&&(!state.stF||cardState(o)===state.stF)&&(!q||(o.label+" "+(o.sub||"")+" "+(o.note||"")).toLowerCase().includes(q)));
   list.sort((a,b)=>b.d.localeCompare(a.d)||String(b.id).localeCompare(String(a.id)));
   const t=totals(mk), sum=list.reduce((a,o)=>a+(kindOf(o.cat)==="neu"?0:o.amt),0);
   h+=`<section class="card"><div class="ch"><h2>${esc(mLabel(mk))}</h2><span class="s num"><span class="pos">+${eur0(t.rev+(t.ent||0))}</span> · −${eur0(-t.sorties)}</span></div>
@@ -2404,7 +2412,7 @@ function instPlansHtml(){ const L=(S().recurring||[]).filter(r=>r.inst&&r.start&
   return `<section class="card"><div class="ch"><h2>Paiements en plusieurs fois</h2></div><p class="muted" style="font-size:12.5px;margin:0">Chaque paiement apparaît dans « Vu à la banque ? » à sa date.</p>${rows}</section>`; }
 function render(){
   if(!state.settings){ renderEmpty(); return; }
-  try{ migInst(); }catch(e){}
+  try{ migInst(); }catch(e){} try{ migHr(); }catch(e){}
   if(!state._entFix||state._entFixN!==allMonths().length){ state._entFix=true; state._entFixN=allMonths().length; try{ entFix(); }catch(e){} }
   const tabs=[["home","Accueil"],["ops","Opérations"],["budget","Budget"],["patri","Patrimoine"],["analyse","Analyse"]];
   const icons={home:ICON.home,ops:ICON.ops,budget:ICON.bud,patri:ICON.pat,analyse:ICON.ana};
@@ -2447,12 +2455,14 @@ document.addEventListener("click",e=>{
     case "card-cyc": state.cardFilter=state.cardFilter===t.dataset.mk?null:t.dataset.mk; render(); break;
     case "op-bank": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ splFlag(o,"bank"); Store.saveMonth(t.dataset.mk); render(); toast("Notée : vue à ta banque"); } break; }
     case "op-bank-undo": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ delete o.bank; Store.saveMonth(t.dataset.mk); render(); } break; }
-    case "health-ok": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ const rem=r2(-o.amt-hrGot(o)); hrRecord(o,t.dataset.mk,(o.hr&&o.hr.length)?"Sécu et mutuelle":"Sécu et mutuelle",rem,todayISO()); toast("Remboursement enregistré sur ton compte"); } break; }
-    case "hr-open": state.hrOpen=t.dataset.id; render(); break;
-    case "hr-cancel": state.hrOpen=null; render(); break;
-    case "hr-save": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(!o) break; const v=parseAmt($("#hr-amt").value), rem=r2(-o.amt-hrGot(o)), d=$("#hr-d").value||todayISO();
+    case "health-ok": state.hrOpen=t.dataset.id; state.hrFull=true; state.hrEditPart=null; render(); break;
+    case "hr-open": state.hrOpen=t.dataset.id; state.hrFull=false; state.hrEditPart=null; render(); break;
+    case "hr-edit": state.hrOpen=t.dataset.id; state.hrFull=false; state.hrEditPart=t.dataset.p; render(); break;
+    case "hr-del": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ hrRemove(o,t.dataset.mk,t.dataset.p); render(); toast("Remboursement retiré"); } break; }
+    case "hr-cancel": state.hrOpen=null; state.hrEditPart=null; state.hrFull=false; render(); break;
+    case "hr-save": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(!o) break; const ep=state.hrEditPart?(o.hr||[]).find(p=>p.id===state.hrEditPart):null, v=parseAmt($("#hr-amt").value), rem=r2(-o.amt-hrGot(o)+(ep?ep.amt:0)), d=$("#hr-d").value||todayISO();
       if(!(v>0)){ toast("Indique le montant reçu"); break; } if(v>rem+0.005){ toast("Plus que ce qui reste à recevoir ("+eur(rem)+")"); break; }
-      hrRecord(o,t.dataset.mk,$("#hr-who").value,r2(v),d); toast("Reçu : "+eur(v)); break; }
+      if(ep) hrRemove(o,t.dataset.mk,ep.id,true); hrRecord(o,t.dataset.mk,$("#hr-who").value,r2(v),d,$("#hr-inbal").checked); state.hrEditPart=null; state.hrFull=false; toast(ep?"Remboursement modifié":"Reçu : "+eur(v)); break; }
     case "hr-close": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ const rem=r2(-o.amt-hrGot(o)); o.health="rembourse_ok"; o.hnet=rem>0?rem:0; Store.saveMonth(t.dataset.mk); state.hrOpen=null; render(); toast("Clos : "+eur(rem)+" restent à ta charge"); } break; }
     case "st-f": state.stF=t.dataset.k; render(); break;
     case "pt-f": state.ptF=t.dataset.k; render(); break;
