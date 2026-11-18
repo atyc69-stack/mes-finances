@@ -377,7 +377,7 @@ const isLateSalary=o=>((o.cat==="rev"&&(o.sub==="Salaire"||o.sub==="Primes & com
 const isCardLate=o=>!!o.card&&o.amt<0&&Number(o.d.slice(8))>=20&&!isLateSalary(o);   // carte différée : à partir du 20, débité le mois suivant
 const shiftNext=o=>isLateSalary(o)||isCardLate(o);
 function budgetOps(mk){ // mois budgétaire : paie du mois précédent + achats carte débités ce mois-ci
-  return opsOf(mk).filter(o=>!shiftNext(o)).concat(opsOf(addM(mk,-1)).filter(shiftNext)).filter(o=>o.health!=="avance"); // avance remboursable : neutre tant que non remboursée
+  return opsOf(mk).filter(o=>!shiftNext(o)).concat(opsOf(addM(mk,-1)).filter(shiftNext)).filter(o=>o.health!=="avance").map(o=>(o.hnet!=null&&o.health==="rembourse_ok")?Object.assign({},o,{amt:-o.hnet}):o); // avance remboursable : neutre tant que non remboursée ; une fois close, seul le reste à charge compte
 }
 function totals(mk){
   const r={rev:0,dep:0,quot:0,fix:0,creRemb:0,creEmp:0,epa:0,byCat:{},bySub:{},quotByCat:{},quotBySub:{}};
@@ -602,9 +602,20 @@ function recvItems(){ const out=[];
   for(const m of allMonths()) for(const o of opsOf(m)){
     if(o.pro&&o.pro.status==="attente") out.push({o,m,amt:Number(o.pro.remb||-o.amt),sub:"note de frais, paie "+deM(o.pro.paie,true),act:"ndf-recu"});
     else if(o.av&&o.av.status==="attente") out.push({o,m,amt:Number(o.av.remb),sub:"avance"+(o.av.partial?", remboursement partiel":""),act:"av-recu"});
-    else if(o.health==="avance") out.push({o,m,amt:-o.amt,sub:"remboursée par la sécu et la mutuelle",act:"health-ok"}); }
+    else if(o.health==="avance"){ const got=hrGot(o), rem=r2(-o.amt-got); out.push({o,m,amt:rem>0?rem:0,got,sub:got>0?"remboursement en cours":"remboursée par la sécu et la mutuelle",act:"health-ok"}); } }
   return out.sort((a,b)=>a.o.d.localeCompare(b.o.d)); }
-function recvRows(L){ return L.map(x=>`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(x.o.label)}</b><small style="white-space:normal">${esc(dFr(x.o.d).slice(0,5))} · ${esc(x.sub)}</small></div><span class="a pos">${eur(x.amt)}</span><button class="btn sm pri" data-act="${x.act}" data-mk="${x.m}" data-id="${x.o.id}">Reçu</button></div>`).join(""); }
+function hrRecord(o,mk0,who,amt,d){ const mk=mkOf(d); o.hr=o.hr||[]; const id=uid(); o.hr.push({id,who,amt,d,opId:id});
+  const rem=r2(-o.amt-hrGot(o)); if(rem<=0.004){ o.health="rembourse_ok"; o.hnet=0; } state.hrOpen=null; Store.saveMonth(mk0);
+  setMonthOps(mk,[...opsOf(mk),{id,d,amt,label:"Remboursement "+who+" · "+o.label,cat:"neu",sub:"Avances",acc:o.acc||"cc",note:"",hrOf:o.id}]); render(); }
+const hrGot=o=>r2((o.hr||[]).reduce((a,p)=>a+p.amt,0));
+const HR_WHO=["Sécu (CPAM)","Mutuelle","Autre"];
+function hrRow(x){ const o=x.o, parts=o.hr||[], open=state.hrOpen===o.id;
+  const pl=parts.map(p=>`<div class="row" style="padding:3px 0;border:0"><div class="t"><small>${esc(dFr(p.d).slice(0,5))} · ${esc(p.who)}</small></div><span class="a pos" style="font-size:12.5px">+ ${eur(p.amt)}</span></div>`).join("");
+  const form=open?`<div style="flex-basis:100%;margin:6px 0"><div class="muted" style="font-size:12px">Qui a payé ?</div><select class="in" id="hr-who" style="margin:4px 0 8px">${HR_WHO.map((w,i)=>`<option ${parts.length===0&&i===0||parts.length&&parts[parts.length-1].who!==w&&i===1?"selected":""}>${esc(w)}</option>`).join("")}</select>
+    <div class="muted" style="font-size:12px">Montant reçu</div><input class="in num" id="hr-amt" inputmode="decimal" placeholder="0,00" style="margin:4px 0 8px"><div class="muted" style="font-size:12px">Date du virement</div><input class="in" id="hr-d" type="date" value="${todayISO()}" style="margin:4px 0 8px"><div style="display:flex;gap:6px"><button class="btn sm pri" data-act="hr-save" data-mk="${x.m}" data-id="${o.id}">Enregistrer</button><button class="btn sm" data-act="hr-cancel">Annuler</button></div><div class="muted" style="font-size:12px;margin-top:6px">Le virement est pointé sur ton compte. Il n'entre pas dans tes revenus.</div></div>`:"";
+  const btns=open?"":`<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 6px"><button class="btn sm pri" data-act="health-ok" data-mk="${x.m}" data-id="${o.id}">${parts.length?"Reçu : le reste":"Reçu en entier"}</button><button class="btn sm" data-act="hr-open" data-id="${o.id}">Reçu en partie</button></div>${parts.length?`<div class="row" style="flex-basis:100%;padding:6px 0 0"><div class="t"><b style="font-weight:500">Plus rien à attendre ?</b><small>le reste (${eur(x.amt)}) est à ma charge</small></div><button class="btn sm" data-act="hr-close" data-mk="${x.m}" data-id="${o.id}">Clore</button></div>`:""}`;
+  return `<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(o.label)}</b><small style="white-space:normal">${esc(dFr(o.d).slice(0,5))} · ${parts.length?`${eur(-o.amt)} à rembourser · reste ${eur(x.amt)}`:esc(x.sub)}</small></div><span class="a pos">${eur(parts.length?x.amt:-o.amt)}</span>${pl?`<div style="flex-basis:100%">${pl}</div>`:""}${form}${btns}</div>`; }
+function recvRows(L){ return L.map(x=>x.act==="health-ok"?hrRow(x):`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(x.o.label)}</b><small style="white-space:normal">${esc(dFr(x.o.d).slice(0,5))} · ${esc(x.sub)}</small></div><span class="a pos">${eur(x.amt)}</span><button class="btn sm pri" data-act="${x.act}" data-mk="${x.m}" data-id="${x.o.id}">Reçu</button></div>`).join(""); }
 function vRecevoir(){ const L=recvItems(), tot=L.reduce((a,x)=>a+x.amt,0);
   return `<section class="card"><div class="ch"><h2>À recevoir</h2><span class="s">${L.length?eur(tot):""}</span></div>${L.length?recvRows(L)+`<p class="muted" style="font-size:12px;margin:8px 0 0">Touche « Reçu » quand l'argent est arrivé. Pour une avance, l'entrée d'argent est créée toute seule sur ton compte.</p>`:`<p class="muted" style="margin:6px 0">Rien à recevoir pour le moment.</p>`}</section>`; }
 function ptLists(){
@@ -1471,7 +1482,7 @@ function budBilan(mk){
 function recvCardHtml(){
   const rec=[]; for(const m of allMonths()) for(const o of opsOf(m)){ if(o.pro&&o.pro.status==="attente") rec.push({o,m,k:"ndf"}); else if(o.av&&o.av.status==="attente") rec.push({o,m,k:"av"}); else if(o.health==="avance") rec.push({o,m,k:"san"}); }
   if(!rec.length) return "";
-  const val=e=>e.k==="ndf"?Number(e.o.pro.remb||-e.o.amt):e.k==="av"?Number(e.o.av.remb):-e.o.amt, tot=rec.reduce((a,e)=>a+val(e),0);
+  const val=e=>e.k==="ndf"?Number(e.o.pro.remb||-e.o.amt):e.k==="av"?Number(e.o.av.remb):r2(-e.o.amt-hrGot(e.o)), tot=rec.reduce((a,e)=>a+val(e),0);
   const sub=e=>e.k==="ndf"?"note de frais, sur la paie de "+deM(e.o.pro.paie,true):e.k==="av"?"avance"+(e.o.av.partial?", remboursement partiel":""):"avance, remboursée par CPAM et mutuelle";
   return `<section class="card" style="border-color:rgba(56,189,248,.45)"><div class="ch"><h2 style="color:#38BDF8">À recevoir</h2><span class="s">remboursements attendus, pas encore arrivés</span></div>
    ${rec.map(e=>`<div class="row"><div class="t" style="white-space:normal"><b style="white-space:normal">${esc(e.o.label)}</b><small style="white-space:normal">${esc(sub(e))}</small></div>${e.k==="ndf"?`<span class="a" style="white-space:nowrap"><input class="in num" style="display:inline;width:84px;height:30px;padding:0 6px;text-align:right" inputmode="decimal" data-ndfremb="${e.o.id}" data-mk="${e.m}" value="${String(val(e)).replace(".",",")}" aria-label="Montant remboursé"> €</span>`:`<span class="a">${eur(val(e))}</span>`}</div>`).join("")}
@@ -1660,7 +1671,7 @@ function vPointer(mk){
   { const mds=[mk]; if(day>=20||cardSettled(mk)) mds.push(addM(mk,1)); hRel+=mds.map((md,i)=>cycBlock(md,false)).join(""); }
   // à recevoir
   const rec=[]; for(const m of allMonths()) for(const o of opsOf(m)){ if(o.pro&&o.pro.status==="attente") rec.push({o,m,k:"ndf"}); else if(o.av&&o.av.status==="attente") rec.push({o,m,k:"av"}); else if(o.health==="avance") rec.push({o,m,k:"san"}); }
-  const recTot=rec.reduce((a,e)=>a+(e.k==="ndf"?Number(e.o.pro.remb||-e.o.amt):e.k==="av"?Number(e.o.av.remb):-e.o.amt),0);
+  const recTot=rec.reduce((a,e)=>a+(e.k==="ndf"?Number(e.o.pro.remb||-e.o.amt):e.k==="av"?Number(e.o.av.remb):r2(-e.o.amt-hrGot(e.o))),0);
   const credH=L.creRec.map(x=>ptRecRow(x,mk,"Reçu")).join(""); const recH=credH+(rec.length?rec.map(e=>`<div class="row"><div class="t"><b>${esc(e.o.label)}</b><small>${esc(dFr(e.o.d))} · ${e.k==="ndf"?"note de frais, attendue sur la paie "+esc(deM(e.o.pro.paie,true)):e.k==="av"?"avance"+(e.o.av.partial?", remboursement partiel":""):"avance, remboursée par CPAM et mutuelle"}</small></div><span class="a pos" style="white-space:nowrap">${e.k==="ndf"?`<input class="in num" style="display:inline;width:84px;height:30px;padding:0 6px;text-align:right" inputmode="decimal" data-ndfremb="${e.o.id}" data-mk="${e.m}" value="${String(Number(e.o.pro.remb||-e.o.amt)).replace(".",",")}" aria-label="Montant remboursé"> €`:eur(e.k==="av"?Number(e.o.av.remb):-e.o.amt)}</span><button class="ab" data-act="${e.k==="ndf"?"ndf-recu":e.k==="av"?"av-recu":"health-ok"}" data-mk="${e.m}" data-id="${e.o.id}">C'est reçu</button></div>`).join(""):(credH?"":`<p class="muted" style="font-size:13px;margin:6px 0">Rien à recevoir.</p>`));
   return h+sec("Prélèvements à venir",(mainOth.filter(x=>!x.paid).length+(cre.length&&!creAll?1:0))+" à pointer")+`<div class="avleg"><span><i></i>pas encore passé</span><span><i class="o"></i>passé</span></div>`+hPre+cardHtml+sec("Relevés de carte","")+hRel+sec("À recevoir",rec.length?eur(recTot):"")+recH+`<p class="muted" style="font-size:12px;margin:12px 0 0">Comment ça marche : un achat saisi est gris. Quand tu le vois sur ta banque, il devient bleu. Quand le relevé de carte est débité de ton compte, il devient vert.</p></section>`;
 }
@@ -2436,7 +2447,13 @@ document.addEventListener("click",e=>{
     case "card-cyc": state.cardFilter=state.cardFilter===t.dataset.mk?null:t.dataset.mk; render(); break;
     case "op-bank": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ splFlag(o,"bank"); Store.saveMonth(t.dataset.mk); render(); toast("Notée : vue à ta banque"); } break; }
     case "op-bank-undo": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ delete o.bank; Store.saveMonth(t.dataset.mk); render(); } break; }
-    case "health-ok": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ o.health="rembourse_ok"; Store.saveMonth(t.dataset.mk); render(); toast("Marqué remboursé"); } break; }
+    case "health-ok": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ const rem=r2(-o.amt-hrGot(o)); hrRecord(o,t.dataset.mk,(o.hr&&o.hr.length)?"Sécu et mutuelle":"Sécu et mutuelle",rem,todayISO()); toast("Remboursement enregistré sur ton compte"); } break; }
+    case "hr-open": state.hrOpen=t.dataset.id; render(); break;
+    case "hr-cancel": state.hrOpen=null; render(); break;
+    case "hr-save": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(!o) break; const v=parseAmt($("#hr-amt").value), rem=r2(-o.amt-hrGot(o)), d=$("#hr-d").value||todayISO();
+      if(!(v>0)){ toast("Indique le montant reçu"); break; } if(v>rem+0.005){ toast("Plus que ce qui reste à recevoir ("+eur(rem)+")"); break; }
+      hrRecord(o,t.dataset.mk,$("#hr-who").value,r2(v),d); toast("Reçu : "+eur(v)); break; }
+    case "hr-close": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ const rem=r2(-o.amt-hrGot(o)); o.health="rembourse_ok"; o.hnet=rem>0?rem:0; Store.saveMonth(t.dataset.mk); state.hrOpen=null; render(); toast("Clos : "+eur(rem)+" restent à ta charge"); } break; }
     case "st-f": state.stF=t.dataset.k; render(); break;
     case "pt-f": state.ptF=t.dataset.k; render(); break;
     case "op-deb": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ splFlag(o,"debited"); Store.saveMonth(t.dataset.mk); render(); } break; }
