@@ -637,9 +637,19 @@ function ptLists(){
   return L;
 }
 function pointCount(){ const L=ptLists(), m0=nowMk(); let n=L.nDeb+L.nCre; const day=Number(todayISO().slice(8)); if((day>=20)&&!cardSettled(m0)) n++; return n; }
+function ptCardRow(o,btn){ const cs=cardState(o), amt=o.spl?splTotal(o):o.amt;
+  const bd=`<span class="bd ${cs==="saisie"?"g":cs==="bank"?"bl":"gr"}" style="margin-left:0">${cs==="saisie"?"saisie":cs==="bank"?"vu sur mon relevé":"débité"}</span>`;
+  return `<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(o.label)}</b><small style="white-space:normal">${bd} ${esc(dFr(o.d).slice(0,5))}</small></div><span class="a">${sgn(amt)}</span>${btn&&cs==="saisie"?`<div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="op-bank" data-mk="${mkOf(o.d)}" data-id="${o.id}">Je le vois sur mon relevé</button></div>`:""}</div>`; }
+function cardGroupsHtml(list){ if(!list.length) return `<p class="muted" style="font-size:13px;margin:6px 0">Tout est débité.</p>`;
+  const mn=m=>mLabel(m).split(" ")[0].toLowerCase(), keys=[...new Set(list.map(cardMk))].sort(), cb=(S().prefs||{}).cardBank||{}; let h="";
+  keys.forEach((mk,i)=>{ const items=list.filter(o=>cardMk(o)===mk).sort((a,b)=>b.d.localeCompare(a.d)), tot=r2(items.reduce((a,o)=>a+(o.spl?splTotal(o):o.amt),0)), nb=items.filter(o=>cardState(o)==="bank").length;
+    const per=`achats du 20 ${mn(addM(mk,-1))} au 19 ${mn(mk)}`;
+    if(i===0) h+=`<div style="border-left:3px solid var(--blue);padding-left:10px;margin:10px 0"><div style="display:flex;justify-content:space-between;align-items:baseline"><b>Débit fin ${esc(mn(mk))}</b><span class="a">${sgn(tot)}</span></div><div class="muted" style="font-size:12px">${per}${cb[mk]!=null?` · relevé de la banque : <b>${sgn(cb[mk])}</b>`:""}</div><div style="height:6px;border-radius:5px;background:var(--bg2,#0D1426);margin:8px 0 4px;overflow:hidden"><i style="display:block;height:100%;width:${items.length?Math.round(nb/items.length*100):0}%;background:#7DA2FF"></i></div><div class="muted" style="font-size:12px">${nb} vus sur mon relevé sur ${items.length}</div>${items.map(o=>ptCardRow(o,true)).join("")}<div class="toolbar" style="margin-top:8px"><button class="btn sm pri" data-act="deb-grp" data-mk="${mk}">Le relevé est prélevé sur mon compte</button></div><div class="muted" style="font-size:12px;margin-top:4px">À toucher le jour du prélèvement : ça valide tous ces achats d'un coup.</div></div>`;
+    else h+=`<details style="border-left:3px solid #475569;padding-left:10px;margin:10px 0;opacity:.8"><summary style="cursor:pointer;list-style:none"><div style="display:flex;justify-content:space-between;align-items:baseline"><b>Débit fin ${esc(mn(mk))} ▾</b><span class="a">${sgn(tot)}</span></div><div class="muted" style="font-size:12px">${per} · pas encore à pointer</div></summary>${items.map(o=>ptCardRow(o,false)).join("")}</details>`; });
+  return h; }
 function ptBuyRow(o,mode){ const mn=m=>mLabel(m).split(" ")[0].toLowerCase(), mk2=mkOf(o.d), cs=cardState(o);
-  const btn=mode==="vu"?`<button class="ab" data-act="op-bank" data-mk="${mk2}" data-id="${o.id}">Je le vois à la banque</button>`:`<button class="ab" data-act="op-deb" data-mk="${mk2}" data-id="${o.id}">Débité sur mon compte</button>`;
-  const bd=`<span class="bd ${cs==="saisie"?"g":cs==="bank"?"bl":"gr"}" style="margin-left:0">${cs==="saisie"?"Saisie":cs==="bank"?"Vue à la banque":"Débitée du compte"}</span>`;
+  const btn=mode==="vu"?`<button class="ab" data-act="op-bank" data-mk="${mk2}" data-id="${o.id}">Je le vois sur mon relevé</button>`:`<button class="ab" data-act="op-deb" data-mk="${mk2}" data-id="${o.id}">Débité sur mon compte</button>`;
+  const bd=`<span class="bd ${cs==="saisie"?"g":cs==="bank"?"bl":"gr"}" style="margin-left:0">${cs==="saisie"?"Saisie":cs==="bank"?"Vu sur mon relevé":"Débitée du compte"}</span>`;
   return `<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(o.label)}</b><small style="white-space:normal">${bd} ${esc(dFr(o.d).slice(0,5))} · débit fin ${esc(mn(cardMk(o)))}</small></div><span class="a">${sgn(o.spl?splTotal(o):o.amt)}</span><div style="flex-basis:100%;margin:0 0 6px">${btn}</div></div>`; }
 function mvBox(rid,m,date){ const key=rid+"|"+m; const [y,mo]=m.split("-").map(Number); const last=pad(lastDay(m));
   if(state.mvKey!==key) return `<button class="ab" data-act="mv-open" data-rid="${rid}" data-mk="${m}" style="margin-left:6px">Décaler</button>`;
@@ -648,8 +658,8 @@ function ptRecRow(x,m,lab){ const mn=mm=>mLabel(mm).split(" ")[0].toLowerCase();
   return `<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(x.r.label)}${instTag(x)}</b><small>${x.moved?"décalé au":"prévu le"} ${Number(x.date.slice(8))} ${esc(mn(m))} · ${esc(catName(x.r.cat))}</small></div><span class="a ${x.amt>0?"pos":""}">${sgn(x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-rid="${x.r.id}" data-mk="${m}">${lab}</button>${mvBox(x.r.id,m,x.date)}</div></div>`; }
 function vPtList(k){
   const L=ptLists(), m0=nowMk(); let h=`<section class="card">`; const empty='<p class="muted" style="font-size:13px;margin:6px 0">Rien à pointer ici.</p>';
-  if(k==="vu"){ h+=`<div class="ch"><h2>Vu à la banque ?</h2><span class="s">${L.vu.length+L.vuRec.length} à confirmer</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Abonnements et achats saisis par toi, pas encore retrouvés sur ta banque.</p>`+(L.vu.length||L.vuRec.length?L.vuRec.map(e=>`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(e.x.r.label)}${instTag(e.x)}</b><small style="white-space:normal">abonnement carte · ${e.x.moved?"décalé au":"prévu le"} ${Number(e.x.date.slice(8))} ${esc(mLabel(e.m).split(" ")[0].toLowerCase())}</small></div><span class="a">${sgn(e.x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-seen="1" data-rid="${e.x.r.id}" data-mk="${e.m}">Je le vois à la banque</button>${mvBox(e.x.r.id,e.m,e.x.date)}</div></div>`).join("")+L.vu.map(o=>ptBuyRow(o,"vu")).join(""):empty)
-    +`<div class="toolbar" style="margin-top:10px">${L.vu.length+L.vuRec.length?`<button class="btn sm pri" data-act="vu-all">Tout marquer « vu à la banque » (${L.vu.length+L.vuRec.length})</button>`:""}<label class="btn sm" style="cursor:pointer">Ou importer mon relevé (CSV)<input type="file" id="recoFile" accept=".csv,text/csv" hidden></label></div>`+vRecoBox(nowMk()); }
+  if(k==="vu"){ h+=`<div class="ch"><h2>Vu sur mon relevé ?</h2><span class="s">${L.vu.length+L.vuRec.length} à confirmer</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Abonnements et achats saisis par toi, pas encore retrouvés sur ton relevé de carte.</p>`+(L.vu.length||L.vuRec.length?L.vuRec.map(e=>`<div class="row" style="flex-wrap:wrap"><div class="t" style="flex:1 1 55%"><b>${esc(e.x.r.label)}${instTag(e.x)}</b><small style="white-space:normal">abonnement carte · ${e.x.moved?"décalé au":"prévu le"} ${Number(e.x.date.slice(8))} ${esc(mLabel(e.m).split(" ")[0].toLowerCase())}</small></div><span class="a">${sgn(e.x.amt)}</span><div style="flex-basis:100%;margin:0 0 6px"><button class="ab" data-act="rec-pay" data-seen="1" data-rid="${e.x.r.id}" data-mk="${e.m}">Je le vois sur mon relevé</button>${mvBox(e.x.r.id,e.m,e.x.date)}</div></div>`).join("")+L.vu.map(o=>ptBuyRow(o,"vu")).join(""):empty)
+    +`<div class="toolbar" style="margin-top:10px">${L.vu.length+L.vuRec.length?`<button class="btn sm pri" data-act="vu-all">Tout marquer « vu sur mon relevé » (${L.vu.length+L.vuRec.length})</button>`:""}<label class="btn sm" style="cursor:pointer">Ou importer mon relevé (CSV)<input type="file" id="recoFile" accept=".csv,text/csv" hidden></label></div>`+vRecoBox(nowMk()); }
   else if(k==="deb"){ const cre=L.debRec.filter(x=>x.r.cat==="cre"), oth=L.debRec.filter(x=>x.r.cat!=="cre");
     h+=`<div class="ch"><h2>À pointer en débit</h2><span class="s">${L.nDeb}</span></div><p class="muted" style="font-size:12.5px;margin:0 0 6px">Achats carte vus à la banque et prélèvements à venir. Ton solde de compte courant ne bouge que quand tu valides le relevé complet (onglet À pointer › Relevé de carte).</p>`;
     if(L.deb.length) h+=`<div class="toolbar"><button class="btn sm pri" data-act="deb-all">Tout marquer « débité » (${L.deb.length})</button></div>`+L.deb.map(o=>ptBuyRow(o,"deb")).join("");
@@ -698,7 +708,7 @@ function opRow(o,mk,showDate){
   const cls=o.amt>0?"pos":"";
   const nm=isCardLate(o), cs=cardState(o);
   const cmL=cs?mLabel(cardMk(o)).split(" ")[0].toLowerCase():"";
-  const bdTxt={saisie:"Saisie",bank:"Vue à la banque",ok:"Débitée du compte"}, bdCls={saisie:"g",bank:"bl",ok:"gr"};
+  const bdTxt={saisie:"Saisie",bank:"Vu sur mon relevé",ok:"Débitée du compte"}, bdCls={saisie:"g",bank:"bl",ok:"gr"};
   const tagNm=cs?`<span class="bd ${bdCls[cs]}" style="margin-left:0">${bdTxt[cs]}</span> <span class="tag nm">${cs==="ok"?"débité":"débit"} fin ${esc(cmL)}</span>`:"";
   const tagPro=o.pro?`<span class="tag ${o.pro.status==="attente"?"todo":"okk"}">${o.pro.status==="attente"?"note de frais à recevoir · paie de "+esc(mLabel(o.pro.paie).split(" ")[0].toLowerCase()):"note de frais remboursée"}</span>`:"";
   const canSplit=o.amt<0&&k!=="neu"&&!o.pro&&!o.av&&!o.avOf&&o.sub!=="Règlement carte"&&!o.spl;
@@ -1077,7 +1087,7 @@ function vPayeForm(){
 function vOps(){
   const L=ptLists(); let t=state.editId?"saisir":(state.opsTab||"saisir"); if(t==="pointer") t="deb";
   const mk=state.month;
-  let h=`<div class="optabs" role="tablist">${[["saisir","Saisir",""],["recevoir","À recevoir",recvItems().length],["vu","Vu à la banque ?",L.nVu],["deb","Prélèvements à pointer",L.nDeb],["mois","Opérations du mois",""]].map(([k,l,n])=>`<button data-optab="${k}" class="${t===k?"on":""}" role="tab" aria-selected="${t===k}">${l}${n!==""?` <span class="cnt">${n}</span>`:""}</button>`).join("")}</div>`;
+  let h=`<div class="optabs" role="tablist">${[["saisir","Saisir",""],["recevoir","À recevoir",recvItems().length],["vu","Vu sur mon relevé ?",L.nVu],["deb","Prélèvements à pointer",L.nDeb],["mois","Opérations du mois",""]].map(([k,l,n])=>`<button data-optab="${k}" class="${t===k?"on":""}" role="tab" aria-selected="${t===k}">${l}${n!==""?` <span class="cnt">${n}</span>`:""}</button>`).join("")}</div>`;
   if(t==="recevoir") return banner()+h+vRecevoir();
   if(t==="deb") return banner()+h+debitsLine()+vPointer(nowMk());
   if(t==="vu") return banner()+h+debitsLine()+vPtList("vu",true);
@@ -1216,7 +1226,7 @@ function parseTicketU(text){ text=text.replace(/[ \t\u00a0]+/g," ");
   const g=rx=>{ const m=text.match(rx); return m?n2(m[1]):0; };
   const learn=S().prefs.ticketLearn||{};
   for(const it of items){ const k=tkNorm(it.name);
-    it.c=learn[k]||(!it.T&&it.tva!=="11"&&(/^APERITIFS?$|ALCOOL|^VINS|BIERES|SPIRITUEUX|CHAMPAGNE/.test(it.sec)||/PASTIS|RICARD|WHISK|VODKA|RHUM|\bGIN\b|BIERE|\bVIN\b|CHAMPAGNE|CIDRE|PORTO|MARTINI/.test(it.name))?"alc":it.T?"alim":/PAPIER|PARFUMERIE|HYGIENE|ENTRETIEN|LESSIVE|DROGUERIE|SOIN|COTON|DENTAIRE|RASAGE|BEBE|MOUCHOIR/.test(it.sec)?"hyg":it.tva==="11"?"alim":"mai"); it.c0=it.c; }
+    it.c=learn[k]||(!it.T&&it.tva!=="11"&&(/^APERITIFS?$|ALCOOL|^VINS|BIERES|SPIRITUEUX|CHAMPAGNE/.test(it.sec)||/PASTIS|RICARD|WHISK|VODKA|RHUM|\bGIN\b|BIERE|\bVIN\b|CHAMPAGNE|CIDRE|PORTO|MARTINI/.test(it.name))?"alc":it.T?"alim":/PAPIER|PARFUMERIE|HYGIENE|ENTRETIEN|LESSIVE|DROGUERIE|SOIN|COTON|DENTAIRE|RASAGE|BEBE|MOUCHOIR/.test(it.sec)||/EPONGE|ESSUIE|LAVETTE|VAISSELLE|NETTOY|DETERGENT|JAVEL|POUBELLE|SAVON|SHAMPO|DENTIFRICE|DOUCHE/.test(it.name)?"hyg":it.tva==="11"?"alim":"mai"); it.c0=it.c; }
   const dm=text.match(/(\d\d)\/(\d\d)\/(\d\d)\s+(\d\d):(\d\d)/);
   let cb=0; for(const m of text.matchAll(/^ ?CB\b(?![^\n]*TRD)[^\n]*?(\d+,\d\d) ?€? ?$/gm)) cb+=n2(m[1]);
   return {items,total:g(/TOTAL \[\d+\] Articles\s+(\d+,\d\d)/),elig:g(/éligibles TR\s+(\d+,\d\d)/),tr:g(/Payé en TITRES RESTAURANT\s+(\d+,\d\d)/),cu:g(/PAIEMENT € CARTE U\s+(\d+,\d\d)/),cb:r2(cb),
@@ -1651,7 +1661,7 @@ function vPointer(mk){
   const sec=(t,r)=>`<div class="avh"><b>${t}</b><span>${r||""}</span></div>`;
   const L=ptLists(), cardTodo=[...L.vu,...L.deb].sort((a,b)=>b.d.localeCompare(a.d));
   let h=`<section class="card av"><div class="ch"><h2>Prélèvements à pointer</h2><span class="s">${L.nDeb} à confirmer</span></div><p class="muted" style="font-size:12.5px;margin:0 0 4px">Quand un prélèvement (loyer, électricité, crédit…) est passé sur ta banque, touche son ✓ : il est enregistré et ton solde du compte courant baisse du montant. Les achats par carte, eux, se pointent plus bas.</p>`;
-  const cardHtml=sec("Achats par carte",cardTodo.length+" à confirmer")+(cardTodo.length?`<div class="toolbar"><button class="btn sm pri" data-act="deb-all">Tout marquer « débité » (${cardTodo.length})</button></div>`+cardTodo.map(o=>ptBuyRow(o,"deb")).join(""):`<p class="muted" style="font-size:13px;margin:6px 0">Tout est débité.</p>`);
+  const cardHtml=sec("Achats par carte",cardTodo.length+" à confirmer")+cardGroupsHtml(cardTodo);
   hRel+=vRecoBox(mk);
   hPre+=`<div class="avs"><span>SUR MON COMPTE</span><span class="num">${eur0(-tAcc)}</span></div>`;
   hPre+=mainOth.sort((a,b)=>(a.paid-b.paid)||a.date.localeCompare(b.date)).map(x=>row(x,mk)).join("");
@@ -2409,7 +2419,7 @@ function instPlansHtml(){ const L=(S().recurring||[]).filter(r=>r.inst&&r.start&
   const rows=L.map(r=>{ let rest=0, lines=""; for(let i=0;i<r.inst;i++){ const m=addM(r.start,i), x=recStatus(m).find(y=>y.r.id===r.id); if(!x) continue; const st=x.paid?'<span class="pos" style="font-size:12px">pointé</span>':x.date<=today?'<span style="font-size:12px;color:var(--amber)">à pointer</span>':'<span class="muted" style="font-size:12px">à venir</span>'; if(!x.paid) rest+=x.amt;
       lines+=`<div class="row" style="flex-wrap:wrap;padding:6px 0"><div class="t" style="flex:1 1 55%"><b style="font-weight:500">${i+1}/${r.inst} · ${Number(x.date.slice(8))} ${esc(mLabel(m).split(" ")[0].toLowerCase())}</b><small>${x.moved?"décalé · ":""}${r.card?"carte":"sur le compte"}</small></div><div style="text-align:right"><span class="a">${sgn(x.amt)}</span><div>${st}</div></div>${x.paid?"":`<div style="flex-basis:100%">${mvBox(r.id,m,x.date)}</div>`}</div>`; }
     return `<div style="padding:8px 0;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(r.label)}</b><button class="ab" data-act="inst-edit" data-id="${r.id}">Modifier</button></div>${lines}<div class="row" style="padding:6px 0 0;border:0"><div class="t"><small>Reste à payer</small></div><span class="a">${sgn(rest)}</span></div></div>`; }).join("");
-  return `<section class="card"><div class="ch"><h2>Paiements en plusieurs fois</h2></div><p class="muted" style="font-size:12.5px;margin:0">Chaque paiement apparaît dans « Vu à la banque ? » à sa date.</p>${rows}</section>`; }
+  return `<section class="card"><div class="ch"><h2>Paiements en plusieurs fois</h2></div><p class="muted" style="font-size:12.5px;margin:0">Chaque paiement apparaît dans « Vu sur mon relevé ? » à sa date.</p>${rows}</section>`; }
 function render(){
   if(!state.settings){ renderEmpty(); return; }
   try{ migInst(); }catch(e){} try{ migHr(); }catch(e){}
@@ -2467,7 +2477,8 @@ document.addEventListener("click",e=>{
     case "st-f": state.stF=t.dataset.k; render(); break;
     case "pt-f": state.ptF=t.dataset.k; render(); break;
     case "op-deb": { const o=opsOf(t.dataset.mk).find(x=>x.id===t.dataset.id); if(o){ splFlag(o,"debited"); Store.saveMonth(t.dataset.mk); render(); } break; }
-    case "vu-all": { for(const e of ptLists().vuRec){ const r=e.x.r, mk=e.m; setMonthOps(mk,[...opsOf(mk),{id:uid(),d:e.x.date,amt:recAmount(r,mk),label:r.label,cat:r.cat,sub:r.sub,acc:r.acc||"cc",fixed:kindOf(r.cat)==="dep",recId:r.id,note:"",card:true,bank:true}]); } for(const o of ptLists().vu){ splFlag(o,"bank"); } for(const m of allMonths()) Store.saveMonth(m); render(); toast("Tout est noté « vu à la banque »"); break; }
+    case "vu-all": { for(const e of ptLists().vuRec){ const r=e.x.r, mk=e.m; setMonthOps(mk,[...opsOf(mk),{id:uid(),d:e.x.date,amt:recAmount(r,mk),label:r.label,cat:r.cat,sub:r.sub,acc:r.acc||"cc",fixed:kindOf(r.cat)==="dep",recId:r.id,note:"",card:true,bank:true}]); } for(const o of ptLists().vu){ splFlag(o,"bank"); } for(const m of allMonths()) Store.saveMonth(m); render(); toast("Tout est noté « vu sur mon relevé »"); break; }
+    case "deb-grp": { for(const o of [...ptLists().vu,...ptLists().deb]) if(cardMk(o)===t.dataset.mk) splFlag(o,"debited"); for(const m of allMonths()) Store.saveMonth(m); render(); toast("Achats validés comme débités"); break; }
     case "deb-all": { for(const o of ptLists().deb){ splFlag(o,"debited"); } for(const m of allMonths()) Store.saveMonth(m); render(); toast("Tout est noté « débité »"); break; }
     case "op-tog": state.opOpen[t.dataset.k]=!state.opOpen[t.dataset.k]; render(); break;
     case "op-kind": state.filter.kind=t.dataset.k; render(); break;
